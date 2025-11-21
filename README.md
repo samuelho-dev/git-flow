@@ -132,7 +132,7 @@ jobs:
 
 - **[Usage Guide](docs/USAGE.md)** - Detailed usage instructions for all workflows
 - **[Examples](docs/EXAMPLES.md)** - Complete workflow examples and patterns
-- **[Migration Guide](docs/MIGRATION.md)** - Migrate from inline Docker commands (coming soon)
+- **[Migration Guide](docs/MIGRATION.md)** - Migrate from inline commands to reusable workflows
 
 ## 🔧 Configuration
 
