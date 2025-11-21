@@ -81,7 +81,7 @@ jobs:
           scan-type: ${{ inputs.scan-type }}
           scan-ref: ${{ inputs.scan-ref }}
           format: ${{ inputs.format }}
-          output: 'trivy-results.${{ inputs.format == "sarif" && "sarif" || "json" }}'
+          output: 'trivy-results.${{ inputs.format == ''sarif'' && ''sarif'' || ''json'' }}'
           severity: ${{ inputs.severity }}
           exit-code: ${{ inputs.exit-code }}
           skip-files: ${{ inputs.skip-files }}
@@ -96,10 +96,10 @@ jobs:
         run: |
           if [ -f "trivy-results.sarif" ]; then
             FINDINGS=$(jq '.runs[0].results | length' trivy-results.sarif)
-            echo "findings=$FINDINGS" >> $GITHUB_OUTPUT
+            echo "findings=$FINDINGS" >> "$GITHUB_OUTPUT"
             echo "Found $FINDINGS security findings"
           else
-            echo "findings=0" >> $GITHUB_OUTPUT
+            echo "findings=0" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Upload Trivy scan results to GitHub Security
@@ -121,22 +121,26 @@ jobs:
         if: always()
         shell: bash
         run: |
-          echo "## 🔍 Trivy Security Scan Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Scan Type:** \`${{ inputs.scan-type }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Target:** \`${{ inputs.scan-ref }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Severity:** \`${{ inputs.severity }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## 🔍 Trivy Security Scan Results"
+            echo ""
+            echo "**Scan Type:** \`${{ inputs.scan-type }}\`"
+            echo "**Target:** \`${{ inputs.scan-ref }}\`"
+            echo "**Severity:** \`${{ inputs.severity }}\`"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
 
           if [ -f "trivy-results.sarif" ]; then
             FINDINGS=$(jq '.runs[0].results | length' trivy-results.sarif)
-            if [ "$FINDINGS" -eq "0" ]; then
-              echo "✅ **No vulnerabilities found**" >> $GITHUB_STEP_SUMMARY
+            if [ "$FINDINGS" -eq 0 ]; then
+              echo "✅ **No vulnerabilities found**" >> "$GITHUB_STEP_SUMMARY"
             else
-              echo "⚠️  **Found $FINDINGS security findings**" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "Review the Security tab for detailed findings." >> $GITHUB_STEP_SUMMARY
+              {
+                echo "⚠️  **Found $FINDINGS security findings**"
+                echo ""
+                echo "Review the Security tab for detailed findings."
+              } >> "$GITHUB_STEP_SUMMARY"
             fi
           else
-            echo "ℹ️  Scan completed (non-SARIF format)" >> $GITHUB_STEP_SUMMARY
+            echo "ℹ️  Scan completed (non-SARIF format)" >> "$GITHUB_STEP_SUMMARY"
           fi

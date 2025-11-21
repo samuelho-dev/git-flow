@@ -91,14 +91,14 @@ jobs:
         run: |
           if [ -f "gitleaks-results.sarif" ]; then
             FINDINGS=$(jq '.runs[0].results | length' gitleaks-results.sarif)
-            echo "findings=$FINDINGS" >> $GITHUB_OUTPUT
+            echo "findings=$FINDINGS" >> "$GITHUB_OUTPUT"
             echo "Found $FINDINGS potential secrets"
           elif [ -f "gitleaks-results.json" ]; then
             FINDINGS=$(jq '. | length' gitleaks-results.json)
-            echo "findings=$FINDINGS" >> $GITHUB_OUTPUT
+            echo "findings=$FINDINGS" >> "$GITHUB_OUTPUT"
             echo "Found $FINDINGS potential secrets"
           else
-            echo "findings=0" >> $GITHUB_OUTPUT
+            echo "findings=0" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Upload Gitleaks results to GitHub Security
@@ -120,32 +120,36 @@ jobs:
         if: always()
         shell: bash
         run: |
-          echo "## 🔐 Gitleaks Secret Scan Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Scan Path:** \`${{ inputs.scan-path }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## 🔐 Gitleaks Secret Scan Results"
+            echo ""
+            echo "**Scan Path:** \`${{ inputs.scan-path }}\`"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
 
           if [ -f "gitleaks-results.sarif" ]; then
             FINDINGS=$(jq '.runs[0].results | length' gitleaks-results.sarif)
-            if [ "$FINDINGS" -eq "0" ]; then
-              echo "✅ **No secrets detected**" >> $GITHUB_STEP_SUMMARY
+            if [ "$FINDINGS" -eq 0 ]; then
+              echo "✅ **No secrets detected**" >> "$GITHUB_STEP_SUMMARY"
             else
-              echo "🚨 **Found $FINDINGS potential secrets**" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "Review the Security tab for detailed findings." >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "### ⚠️  Action Required" >> $GITHUB_STEP_SUMMARY
-              echo "1. Rotate any exposed credentials immediately" >> $GITHUB_STEP_SUMMARY
-              echo "2. Remove secrets from git history" >> $GITHUB_STEP_SUMMARY
-              echo "3. Use environment variables or secret management" >> $GITHUB_STEP_SUMMARY
+              {
+                echo "🚨 **Found $FINDINGS potential secrets**"
+                echo ""
+                echo "Review the Security tab for detailed findings."
+                echo ""
+                echo "### ⚠️  Action Required"
+                echo "1. Rotate any exposed credentials immediately"
+                echo "2. Remove secrets from git history"
+                echo "3. Use environment variables or secret management"
+              } >> "$GITHUB_STEP_SUMMARY"
             fi
           elif [ -f "gitleaks-results.json" ]; then
             FINDINGS=$(jq '. | length' gitleaks-results.json)
-            if [ "$FINDINGS" -eq "0" ]; then
-              echo "✅ **No secrets detected**" >> $GITHUB_STEP_SUMMARY
+            if [ "$FINDINGS" -eq 0 ]; then
+              echo "✅ **No secrets detected**" >> "$GITHUB_STEP_SUMMARY"
             else
-              echo "🚨 **Found $FINDINGS potential secrets**" >> $GITHUB_STEP_SUMMARY
+              echo "🚨 **Found $FINDINGS potential secrets**" >> "$GITHUB_STEP_SUMMARY"
             fi
           else
-            echo "✅ Scan completed successfully" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Scan completed successfully" >> "$GITHUB_STEP_SUMMARY"
           fi

@@ -138,9 +138,11 @@ jobs:
         if: inputs.build-args != ''
         shell: bash
         run: |
-          echo "args<<EOF" >> $GITHUB_OUTPUT
-          echo "${{ inputs.build-args }}" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          {
+            echo "args<<EOF"
+            echo "${{ inputs.build-args }}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and push Docker image
         id: build
@@ -211,24 +213,27 @@ jobs:
       - name: Generate build summary
         shell: bash
         run: |
-          echo "## 🐳 Docker Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Digest:** \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Platforms:** \`${{ inputs.platforms }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Tags" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Security" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ inputs.scan }}" == "true" ]; then
-            echo "✅ Vulnerability scan: Completed" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## 🐳 Docker Build Summary"
+            echo ""
+            echo "**Image:** \`${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}\`"
+            echo "**Digest:** \`${{ steps.build.outputs.digest }}\`"
+            echo "**Platforms:** \`${{ inputs.platforms }}\`"
+            echo ""
+            echo "### Tags"
+            echo "\`\`\`"
+            echo "${{ steps.meta.outputs.tags }}"
+            echo "\`\`\`"
+            echo ""
+            echo "### Security"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${{ inputs.scan }}" = "true" ]; then
+            echo "✅ Vulnerability scan: Completed" >> "$GITHUB_STEP_SUMMARY"
           fi
-          if [ "${{ inputs.sign }}" == "true" ]; then
-            echo "✅ Image signature: Verified" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.sign }}" = "true" ]; then
+            echo "✅ Image signature: Verified" >> "$GITHUB_STEP_SUMMARY"
           fi
-          if [ "${{ inputs.sbom }}" == "true" ]; then
-            echo "✅ SBOM: Generated" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.sbom }}" = "true" ]; then
+            echo "✅ SBOM: Generated" >> "$GITHUB_STEP_SUMMARY"
           fi

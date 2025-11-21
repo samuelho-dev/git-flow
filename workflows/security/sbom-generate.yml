@@ -120,51 +120,59 @@ jobs:
         run: |
           if [ -f "trivy-sbom-results.sarif" ]; then
             FINDINGS=$(jq '.runs[0].results | length' trivy-sbom-results.sarif)
-            echo "findings=$FINDINGS" >> $GITHUB_OUTPUT
+            echo "findings=$FINDINGS" >> "$GITHUB_OUTPUT"
             echo "Found $FINDINGS vulnerabilities in SBOM"
           else
-            echo "findings=0" >> $GITHUB_OUTPUT
+            echo "findings=0" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Generate SBOM summary
         shell: bash
         run: |
-          echo "## 📋 SBOM Generation Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Target Type:** \`${{ inputs.target-type }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Target:** \`${{ inputs.target }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Format:** \`${{ inputs.format }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Output File:** \`${{ inputs.output-file }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## 📋 SBOM Generation Summary"
+            echo ""
+            echo "**Target Type:** \`${{ inputs.target-type }}\`"
+            echo "**Target:** \`${{ inputs.target }}\`"
+            echo "**Format:** \`${{ inputs.format }}\`"
+            echo "**Output File:** \`${{ inputs.output-file }}\`"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
 
           if [ -f "${{ inputs.output-file }}" ]; then
-            echo "✅ **SBOM generated successfully**" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **SBOM generated successfully**" >> "$GITHUB_STEP_SUMMARY"
 
             # Count components in SBOM
-            if [ "${{ inputs.format }}" == "spdx-json" ]; then
+            if [ "${{ inputs.format }}" = "spdx-json" ]; then
               COMPONENTS=$(jq '.packages | length' "${{ inputs.output-file }}")
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "📦 **Total Components:** $COMPONENTS" >> $GITHUB_STEP_SUMMARY
-            elif [ "${{ inputs.format }}" == "cyclonedx-json" ]; then
+              {
+                echo ""
+                echo "📦 **Total Components:** $COMPONENTS"
+              } >> "$GITHUB_STEP_SUMMARY"
+            elif [ "${{ inputs.format }}" = "cyclonedx-json" ]; then
               COMPONENTS=$(jq '.components | length' "${{ inputs.output-file }}")
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "📦 **Total Components:** $COMPONENTS" >> $GITHUB_STEP_SUMMARY
+              {
+                echo ""
+                echo "📦 **Total Components:** $COMPONENTS"
+              } >> "$GITHUB_STEP_SUMMARY"
             fi
 
-            if [ "${{ inputs.scan-sbom }}" == "true" ] && [ -f "trivy-sbom-results.sarif" ]; then
+            if [ "${{ inputs.scan-sbom }}" = "true" ] && [ -f "trivy-sbom-results.sarif" ]; then
               VULNS=$(jq '.runs[0].results | length' trivy-sbom-results.sarif)
-              echo "" >> $GITHUB_STEP_SUMMARY
-              if [ "$VULNS" -eq "0" ]; then
-                echo "✅ **No vulnerabilities found**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              if [ "$VULNS" -eq 0 ]; then
+                echo "✅ **No vulnerabilities found**" >> "$GITHUB_STEP_SUMMARY"
               else
-                echo "⚠️  **Found $VULNS vulnerabilities**" >> $GITHUB_STEP_SUMMARY
+                echo "⚠️  **Found $VULNS vulnerabilities**" >> "$GITHUB_STEP_SUMMARY"
               fi
             fi
 
-            if [ "${{ inputs.upload-dependency-snapshot }}" == "true" ]; then
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "✅ **Uploaded to GitHub Dependency Graph**" >> $GITHUB_STEP_SUMMARY
+            if [ "${{ inputs.upload-dependency-snapshot }}" = "true" ]; then
+              {
+                echo ""
+                echo "✅ **Uploaded to GitHub Dependency Graph**"
+              } >> "$GITHUB_STEP_SUMMARY"
             fi
           else
-            echo "❌ **SBOM generation failed**" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **SBOM generation failed**" >> "$GITHUB_STEP_SUMMARY"
           fi
