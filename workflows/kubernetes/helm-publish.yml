@@ -1,0 +1,328 @@
+name: 'Helm Package & Publish'
+
+on:
+  workflow_call:
+    inputs:
+      chart-path:
+        description: 'Path to Helm chart directory'
+        required: true
+        type: string
+      registry:
+        description: 'OCI registry (ghcr.io, docker.io, etc.)'
+        required: false
+        type: string
+        default: 'ghcr.io'
+      repository:
+        description: 'Chart repository path (e.g., owner/charts)'
+        required: false
+        type: string
+        default: ''
+      sign-chart:
+        description: 'Sign chart with Cosign'
+        required: false
+        type: boolean
+        default: true
+      create-release:
+        description: 'Create GitHub release'
+        required: false
+        type: boolean
+        default: true
+      multi-registry:
+        description: 'Comma-separated list of additional registries'
+        required: false
+        type: string
+        default: ''
+      update-index:
+        description: 'Update Helm repository index (for traditional repos)'
+        required: false
+        type: boolean
+        default: false
+      provenance:
+        description: 'Generate chart provenance file'
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      registry-username:
+        description: 'Registry username (defaults to github.actor)'
+        required: false
+      registry-password:
+        description: 'Registry password/token (defaults to GITHUB_TOKEN)'
+        required: false
+      gpg-private-key:
+        description: 'GPG private key for chart signing'
+        required: false
+      gpg-passphrase:
+        description: 'GPG key passphrase'
+        required: false
+    outputs:
+      chart-version:
+        description: 'Published chart version'
+        value: ${{ jobs.publish.outputs.version }}
+      chart-digest:
+        description: 'OCI digest of published chart'
+        value: ${{ jobs.publish.outputs.digest }}
+      release-url:
+        description: 'GitHub release URL'
+        value: ${{ jobs.publish.outputs.release-url }}
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  publish:
+    name: Package & Publish Chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.chart-info.outputs.version }}
+      digest: ${{ steps.push.outputs.digest }}
+      release-url: ${{ steps.release.outputs.url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@fe7b79cd5ee1e45176fcad797de68ecaf3ca4814 # v4.2.0
+        with:
+          version: v3.16.3
+
+      - name: Install yq
+        run: |
+          YQ_VERSION="v4.44.6"
+          wget -q "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -O /tmp/yq
+          sudo mv /tmp/yq /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Install Cosign
+        if: inputs.sign-chart
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
+      - name: Get chart information
+        id: chart-info
+        working-directory: ${{ inputs.chart-path }}
+        run: |
+          CHART_NAME=$(yq eval '.name' Chart.yaml)
+          CHART_VERSION=$(yq eval '.version' Chart.yaml)
+          CHART_APP_VERSION=$(yq eval '.appVersion' Chart.yaml)
+          echo "name=$CHART_NAME" >> $GITHUB_OUTPUT
+          echo "version=$CHART_VERSION" >> $GITHUB_OUTPUT
+          echo "app-version=$CHART_APP_VERSION" >> $GITHUB_OUTPUT
+          echo "Chart: $CHART_NAME v$CHART_VERSION (app: $CHART_APP_VERSION)"
+
+      - name: Set repository path
+        id: repo-path
+        run: |
+          if [ -n "${{ inputs.repository }}" ]; then
+            REPO_PATH="${{ inputs.repository }}"
+          else
+            REPO_PATH="${{ github.repository_owner }}/charts"
+          fi
+          echo "path=$REPO_PATH" >> $GITHUB_OUTPUT
+          echo "Repository path: $REPO_PATH"
+
+      - name: Add Helm repositories
+        working-directory: ${{ inputs.chart-path }}
+        run: |
+          if [ -f "Chart.yaml" ]; then
+            yq eval '.dependencies[].repository' Chart.yaml | grep -v "^null$" | while read -r repo; do
+              if [[ "$repo" == http* ]]; then
+                repo_name=$(echo "$repo" | sed 's|https://||;s|http://||;s|/|-|g')
+                echo "Adding repository: $repo_name ($repo)"
+                helm repo add "$repo_name" "$repo" || true
+              fi
+            done
+          fi
+          helm repo update || true
+
+      - name: Update chart dependencies
+        working-directory: ${{ inputs.chart-path }}
+        run: |
+          if [ -f "Chart.yaml" ] && yq eval '.dependencies' Chart.yaml | grep -q "name:"; then
+            echo "Updating chart dependencies..."
+            helm dependency update
+          else
+            echo "No dependencies to update"
+          fi
+
+      - name: Package Helm chart
+        id: package
+        working-directory: ${{ inputs.chart-path }}
+        run: |
+          echo "Packaging chart..."
+          helm package . --destination /tmp/charts
+
+          CHART_FILE="${{ steps.chart-info.outputs.name }}-${{ steps.chart-info.outputs.version }}.tgz"
+          echo "package-path=/tmp/charts/$CHART_FILE" >> $GITHUB_OUTPUT
+          echo "Packaged: $CHART_FILE"
+
+      - name: Generate chart provenance
+        if: inputs.provenance
+        working-directory: /tmp/charts
+        run: |
+          CHART_FILE="${{ steps.chart-info.outputs.name }}-${{ steps.chart-info.outputs.version }}.tgz"
+          echo "Generating provenance file..."
+          helm provenance "$CHART_FILE" || echo "⚠️  Provenance generation failed (GPG key may not be configured)"
+
+      - name: Import GPG key
+        if: inputs.sign-chart && secrets.gpg-private-key != ''
+        run: |
+          echo "${{ secrets.gpg-private-key }}" | gpg --batch --import
+          gpg --list-secret-keys
+
+      - name: Log in to primary registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.registry-username || github.actor }}
+          password: ${{ secrets.registry-password || secrets.GITHUB_TOKEN }}
+
+      - name: Push chart to OCI registry
+        id: push
+        working-directory: /tmp/charts
+        run: |
+          CHART_FILE="${{ steps.chart-info.outputs.name }}-${{ steps.chart-info.outputs.version }}.tgz"
+          OCI_URL="oci://${{ inputs.registry }}/${{ steps.repo-path.outputs.path }}"
+
+          echo "Pushing chart to $OCI_URL..."
+          helm push "$CHART_FILE" "$OCI_URL" | tee push-output.log
+
+          # Extract digest from push output
+          DIGEST=$(grep -oP 'Digest: \K[a-f0-9]+' push-output.log || echo "")
+          if [ -n "$DIGEST" ]; then
+            echo "digest=sha256:$DIGEST" >> $GITHUB_OUTPUT
+            echo "Chart digest: sha256:$DIGEST"
+          fi
+
+      - name: Sign chart with Cosign
+        if: inputs.sign-chart && steps.push.outputs.digest != ''
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          CHART_REF="${{ inputs.registry }}/${{ steps.repo-path.outputs.path }}/${{ steps.chart-info.outputs.name }}:${{ steps.chart-info.outputs.version }}"
+          echo "Signing chart: $CHART_REF"
+          cosign sign --yes "$CHART_REF@${{ steps.push.outputs.digest }}"
+          echo "✅ Chart signed with keyless signature"
+
+      - name: Push to additional registries
+        if: inputs.multi-registry != ''
+        working-directory: /tmp/charts
+        run: |
+          CHART_FILE="${{ steps.chart-info.outputs.name }}-${{ steps.chart-info.outputs.version }}.tgz"
+
+          IFS=',' read -ra REGISTRIES <<< "${{ inputs.multi-registry }}"
+          for registry in "${REGISTRIES[@]}"; do
+            registry=$(echo "$registry" | xargs)  # Trim whitespace
+            echo "Pushing to additional registry: $registry"
+
+            # Login to registry (assumes same credentials)
+            echo "${{ secrets.registry-password || secrets.GITHUB_TOKEN }}" | \
+              helm registry login "$registry" \
+              --username "${{ secrets.registry-username || github.actor }}" \
+              --password-stdin
+
+            OCI_URL="oci://$registry/${{ steps.repo-path.outputs.path }}"
+            helm push "$CHART_FILE" "$OCI_URL" || echo "⚠️  Push to $registry failed"
+          done
+
+      - name: Update Helm repository index
+        if: inputs.update-index
+        working-directory: /tmp/charts
+        run: |
+          echo "Generating Helm repository index..."
+          helm repo index . --url "https://${{ inputs.registry }}/${{ steps.repo-path.outputs.path }}"
+
+          if [ -f "index.yaml" ]; then
+            echo "✅ Repository index generated"
+          else
+            echo "⚠️  Index generation failed"
+          fi
+
+      - name: Create GitHub Release
+        if: inputs.create-release
+        id: release
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.2.0
+        with:
+          tag_name: ${{ steps.chart-info.outputs.name }}-${{ steps.chart-info.outputs.version }}
+          name: ${{ steps.chart-info.outputs.name }} v${{ steps.chart-info.outputs.version }}
+          body: |
+            ## 📦 Helm Chart Release
+
+            **Chart:** `${{ steps.chart-info.outputs.name }}`
+            **Version:** `${{ steps.chart-info.outputs.version }}`
+            **App Version:** `${{ steps.chart-info.outputs.app-version }}`
+
+            ### Installation
+
+            ```bash
+            # OCI Registry (recommended)
+            helm install my-release oci://${{ inputs.registry }}/${{ steps.repo-path.outputs.path }}/${{ steps.chart-info.outputs.name }} --version ${{ steps.chart-info.outputs.version }}
+
+            # Or from GitHub Release
+            helm install my-release ./${{ steps.chart-info.outputs.name }}-${{ steps.chart-info.outputs.version }}.tgz
+            ```
+
+            ### Verification
+
+            ```bash
+            # Verify signature (if signed)
+            cosign verify ${{ inputs.registry }}/${{ steps.repo-path.outputs.path }}/${{ steps.chart-info.outputs.name }}:${{ steps.chart-info.outputs.version }}
+            ```
+
+            ---
+            *Published from commit ${{ github.sha }}*
+          files: |
+            /tmp/charts/${{ steps.chart-info.outputs.name }}-${{ steps.chart-info.outputs.version }}.tgz
+            /tmp/charts/${{ steps.chart-info.outputs.name }}-${{ steps.chart-info.outputs.version }}.tgz.prov
+            /tmp/charts/index.yaml
+          draft: false
+          prerelease: false
+
+      - name: Upload chart artifacts
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: helm-chart-${{ steps.chart-info.outputs.name }}-${{ steps.chart-info.outputs.version }}
+          path: |
+            /tmp/charts/*.tgz
+            /tmp/charts/*.prov
+            /tmp/charts/index.yaml
+          retention-days: 90
+
+      - name: Generate publish summary
+        run: |
+          {
+            echo "## 📦 Helm Chart Published"
+            echo ""
+            echo "**Chart:** \`${{ steps.chart-info.outputs.name }}\`"
+            echo "**Version:** \`${{ steps.chart-info.outputs.version }}\`"
+            echo "**App Version:** \`${{ steps.chart-info.outputs.app-version }}\`"
+            echo ""
+            echo "### Registry"
+            echo "- **Primary:** \`${{ inputs.registry }}/${{ steps.repo-path.outputs.path }}\`"
+
+            if [ -n "${{ inputs.multi-registry }}" ]; then
+              echo "- **Additional:** \`${{ inputs.multi-registry }}\`"
+            fi
+
+            echo ""
+            echo "### Installation"
+            echo "\`\`\`bash"
+            echo "helm install my-release oci://${{ inputs.registry }}/${{ steps.repo-path.outputs.path }}/${{ steps.chart-info.outputs.name }} --version ${{ steps.chart-info.outputs.version }}"
+            echo "\`\`\`"
+
+            if [ "${{ inputs.sign-chart }}" == "true" ]; then
+              echo ""
+              echo "✅ **Chart signed with Cosign**"
+            fi
+
+            if [ "${{ inputs.create-release }}" == "true" ]; then
+              echo ""
+              echo "✅ **GitHub Release created**"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

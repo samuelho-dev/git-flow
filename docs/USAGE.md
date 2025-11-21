@@ -7,9 +7,10 @@ Complete guide for using git-flow reusable workflows in your projects.
 1. [Getting Started](#getting-started)
 2. [Docker Workflows](#docker-workflows)
 3. [Security Workflows](#security-workflows)
-4. [Composite Actions](#composite-actions)
-5. [Best Practices](#best-practices)
-6. [Troubleshooting](#troubleshooting)
+4. [Kubernetes Workflows](#kubernetes-workflows)
+5. [Composite Actions](#composite-actions)
+6. [Best Practices](#best-practices)
+7. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -327,6 +328,261 @@ jobs:
     with:
       format: cyclonedx-json
       output-file: sbom.cdx.json
+```
+
+---
+
+## Kubernetes Workflows
+
+### `kubernetes/helm-lint.yml`
+
+Lint and validate Helm charts with kubeconform and helm-docs verification.
+
+#### Inputs
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `chart-path` | string | **required** | Path to Helm chart directory |
+| `values-file` | string | `values.yaml` | Override values file |
+| `strict` | boolean | `true` | Use strict linting (fail on warnings) |
+| `kubeconform` | boolean | `true` | Run kubeconform validation |
+| `kubernetes-version` | string | `1.30.0` | Kubernetes version for kubeconform |
+| `helm-docs-check` | boolean | `true` | Check if README.md is up to date |
+| `extra-values` | string | `''` | Additional values files (comma-separated) |
+| `schema-validation` | boolean | `false` | Validate against JSON schemas |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `lint-result` | Lint result (success/failure) |
+| `chart-version` | Chart version from Chart.yaml |
+
+#### Examples
+
+**Basic Helm lint:**
+```yaml
+jobs:
+  lint:
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-lint.yml@v1
+    with:
+      chart-path: charts/my-app
+```
+
+**Lint with schema validation:**
+```yaml
+jobs:
+  lint:
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-lint.yml@v1
+    with:
+      chart-path: charts/my-app
+      schema-validation: true
+      extra-values: values-dev.yaml,values-prod.yaml
+```
+
+**Disable kubeconform:**
+```yaml
+jobs:
+  lint:
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-lint.yml@v1
+    with:
+      chart-path: charts/my-app
+      kubeconform: false
+      strict: false  # Allow warnings
+```
+
+---
+
+### `kubernetes/helm-test.yml`
+
+Run Helm unittest tests for chart validation.
+
+#### Inputs
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `chart-path` | string | **required** | Path to Helm chart directory |
+| `test-pattern` | string | `tests/*.yaml` | Test file pattern (glob) |
+| `fail-fast` | boolean | `false` | Stop testing on first failure |
+| `parallel` | boolean | `true` | Run tests in parallel |
+| `output-format` | string | `junit` | Test output format (normal, junit, nunit) |
+| `strict` | boolean | `true` | Fail on warnings |
+| `update-snapshots` | boolean | `false` | Update test snapshots |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `test-result` | Test result (success/failure) |
+| `tests-run` | Number of tests executed |
+| `tests-passed` | Number of tests passed |
+| `tests-failed` | Number of tests failed |
+
+#### Examples
+
+**Basic Helm test:**
+```yaml
+jobs:
+  test:
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-test.yml@v1
+    with:
+      chart-path: charts/my-app
+```
+
+**Test with snapshot update:**
+```yaml
+jobs:
+  test:
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-test.yml@v1
+    with:
+      chart-path: charts/my-app
+      update-snapshots: true
+      output-format: junit
+```
+
+**Custom test pattern:**
+```yaml
+jobs:
+  test:
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-test.yml@v1
+    with:
+      chart-path: charts/my-app
+      test-pattern: tests/**/*_test.yaml
+      fail-fast: true
+```
+
+---
+
+### `kubernetes/helm-publish.yml`
+
+Package and publish Helm charts to OCI registries with signing.
+
+#### Inputs
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `chart-path` | string | **required** | Path to Helm chart directory |
+| `registry` | string | `ghcr.io` | OCI registry URL |
+| `repository` | string | `{owner}/charts` | Chart repository path |
+| `sign-chart` | boolean | `true` | Sign chart with Cosign |
+| `create-release` | boolean | `true` | Create GitHub release |
+| `multi-registry` | string | `''` | Additional registries (comma-separated) |
+| `update-index` | boolean | `false` | Update Helm repository index |
+| `provenance` | boolean | `true` | Generate chart provenance file |
+
+#### Secrets
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `registry-username` | No | Registry username (defaults to `github.actor`) |
+| `registry-password` | No | Registry password (defaults to `GITHUB_TOKEN`) |
+| `gpg-private-key` | No | GPG private key for chart signing |
+| `gpg-passphrase` | No | GPG key passphrase |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `chart-version` | Published chart version |
+| `chart-digest` | OCI digest of published chart |
+| `release-url` | GitHub release URL |
+
+#### Examples
+
+**Basic Helm publish:**
+```yaml
+jobs:
+  publish:
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-publish.yml@v1
+    with:
+      chart-path: charts/my-app
+    secrets: inherit
+```
+
+**Publish to multiple registries:**
+```yaml
+jobs:
+  publish:
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-publish.yml@v1
+    with:
+      chart-path: charts/my-app
+      multi-registry: docker.io,quay.io
+      sign-chart: true
+    secrets: inherit
+```
+
+**Publish without GitHub release:**
+```yaml
+jobs:
+  publish:
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-publish.yml@v1
+    with:
+      chart-path: charts/my-app
+      create-release: false
+      provenance: false
+```
+
+---
+
+### `kubernetes/kyverno-test.yml`
+
+Test Kyverno policies using Kyverno CLI and Chainsaw framework.
+
+#### Inputs
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `policy-path` | string | **required** | Path to Kyverno policies directory |
+| `test-path` | string | `tests` | Path to Chainsaw tests directory |
+| `kyverno-version` | string | `v1.13.0` | Kyverno CLI version |
+| `chainsaw-version` | string | `v0.2.14` | Chainsaw version |
+| `test-framework` | string | `both` | Test framework (chainsaw, kyverno-cli, both) |
+| `fail-fast` | boolean | `false` | Stop testing on first failure |
+| `report-format` | string | `junit` | Report format (json, junit, none) |
+| `validate-policies` | boolean | `true` | Validate policy syntax before testing |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `test-result` | Test result (success/failure) |
+| `tests-run` | Number of tests executed |
+| `tests-passed` | Number of tests passed |
+| `tests-failed` | Number of tests failed |
+
+#### Examples
+
+**Basic Kyverno test:**
+```yaml
+jobs:
+  test:
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/kyverno-test.yml@v1
+    with:
+      policy-path: policies/
+```
+
+**Test with Chainsaw only:**
+```yaml
+jobs:
+  test:
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/kyverno-test.yml@v1
+    with:
+      policy-path: policies/
+      test-path: tests/chainsaw
+      test-framework: chainsaw
+      fail-fast: true
+```
+
+**Test with specific versions:**
+```yaml
+jobs:
+  test:
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/kyverno-test.yml@v1
+    with:
+      policy-path: policies/
+      kyverno-version: v1.13.0
+      chainsaw-version: v0.2.14
+      report-format: junit
 ```
 
 ---

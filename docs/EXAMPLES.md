@@ -10,6 +10,8 @@ Complete examples for common CI/CD scenarios using git-flow reusable workflows.
 4. [Multi-Platform Builds](#multi-platform-builds)
 5. [Pull Request Workflows](#pull-request-workflows)
 6. [Scheduled Security Scans](#scheduled-security-scans)
+7. [Helm Chart CI/CD](#helm-chart-cicd)
+8. [Kyverno Policy Testing](#kyverno-policy-testing)
 
 ---
 
@@ -522,6 +524,255 @@ jobs:
         with:
           scan-type: image
           scan-ref: ghcr.io/${{ github.repository_owner }}/my-app:${{ github.sha }}
+```
+
+---
+
+## Helm Chart CI/CD
+
+Complete CI/CD pipeline for Helm charts with lint, test, and publish.
+
+```yaml
+name: Helm Chart CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'charts/**'
+  pull_request:
+    paths:
+      - 'charts/**'
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  checks: write
+
+jobs:
+  # Stage 1: Lint
+  lint:
+    name: Lint Helm Chart
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-lint.yml@v1
+    with:
+      chart-path: charts/my-app
+      strict: true
+      kubeconform: true
+      kubernetes-version: '1.30.0'
+      helm-docs-check: true
+      schema-validation: true
+
+  # Stage 2: Test
+  test:
+    name: Test Helm Chart
+    needs: lint
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-test.yml@v1
+    with:
+      chart-path: charts/my-app
+      output-format: junit
+      fail-fast: false
+
+  # Stage 3: Publish (only on main branch)
+  publish:
+    name: Publish Helm Chart
+    needs: [lint, test]
+    if: github.ref == 'refs/heads/main'
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-publish.yml@v1
+    with:
+      chart-path: charts/my-app
+      registry: ghcr.io
+      sign-chart: true
+      create-release: true
+      provenance: true
+    secrets: inherit
+
+  # Stage 4: Verify Published Chart
+  verify:
+    name: Verify Published Chart
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Helm
+        uses: samuelho-dev/git-flow/actions/setup-kubernetes-tools@v1
+        with:
+          install-helm: true
+          install-cosign: true
+
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Pull and verify chart
+        run: |
+          CHART_VERSION=$(helm show chart oci://ghcr.io/${{ github.repository_owner }}/charts/my-app | grep '^version:' | awk '{print $2}')
+          helm pull oci://ghcr.io/${{ github.repository_owner }}/charts/my-app --version $CHART_VERSION
+          cosign verify oci://ghcr.io/${{ github.repository_owner }}/charts/my-app:$CHART_VERSION
+```
+
+### Multi-Chart Repository
+
+Lint and test multiple charts in parallel.
+
+```yaml
+name: Multi-Chart CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Find all charts
+  find-charts:
+    runs-on: ubuntu-latest
+    outputs:
+      charts: ${{ steps.find.outputs.charts }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: find
+        run: |
+          CHARTS=$(find charts -maxdepth 1 -mindepth 1 -type d -exec basename {} \; | jq -R -s -c 'split("\n")[:-1]')
+          echo "charts=$CHARTS" >> $GITHUB_OUTPUT
+
+  # Lint all charts
+  lint:
+    name: Lint ${{ matrix.chart }}
+    needs: find-charts
+    strategy:
+      matrix:
+        chart: ${{ fromJson(needs.find-charts.outputs.charts) }}
+      fail-fast: false
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-lint.yml@v1
+    with:
+      chart-path: charts/${{ matrix.chart }}
+
+  # Test all charts
+  test:
+    name: Test ${{ matrix.chart }}
+    needs: [find-charts, lint]
+    strategy:
+      matrix:
+        chart: ${{ fromJson(needs.find-charts.outputs.charts) }}
+      fail-fast: false
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-test.yml@v1
+    with:
+      chart-path: charts/${{ matrix.chart }}
+
+  # Publish all charts (main branch only)
+  publish:
+    name: Publish ${{ matrix.chart }}
+    needs: [find-charts, test]
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        chart: ${{ fromJson(needs.find-charts.outputs.charts) }}
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-publish.yml@v1
+    with:
+      chart-path: charts/${{ matrix.chart }}
+    secrets: inherit
+```
+
+---
+
+## Kyverno Policy Testing
+
+Test Kyverno policies with comprehensive validation.
+
+```yaml
+name: Kyverno Policy CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'policies/**'
+  pull_request:
+    paths:
+      - 'policies/**'
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  # Validate and test policies
+  test-policies:
+    name: Test Kyverno Policies
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/kyverno-test.yml@v1
+    with:
+      policy-path: policies/
+      test-path: tests/chainsaw
+      test-framework: both
+      kyverno-version: v1.13.0
+      chainsaw-version: v0.2.14
+      validate-policies: true
+      report-format: junit
+
+  # Deploy policies to cluster (main branch only)
+  deploy:
+    name: Deploy Policies
+    needs: test-policies
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: samuelho-dev/git-flow/actions/setup-kubernetes-tools@v1
+        with:
+          install-kubectl: true
+
+      - name: Deploy to cluster
+        run: |
+          # Configure kubectl (add your cluster config here)
+          kubectl apply -f policies/ --dry-run=server
+          kubectl apply -f policies/
+```
+
+### Multi-Environment Policy Testing
+
+Test policies across different Kubernetes versions.
+
+```yaml
+name: Kyverno Multi-Environment Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-k8s-versions:
+    name: Test on k8s ${{ matrix.k8s-version }}
+    strategy:
+      matrix:
+        k8s-version: ['1.28.0', '1.29.0', '1.30.0']
+      fail-fast: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Kyverno CLI
+        run: |
+          KYVERNO_VERSION="v1.13.0"
+          wget -q "https://github.com/kyverno/kyverno/releases/download/${KYVERNO_VERSION}/kyverno-cli_${KYVERNO_VERSION}_linux_x86_64.tar.gz"
+          tar -xzf "kyverno-cli_${KYVERNO_VERSION}_linux_x86_64.tar.gz"
+          sudo mv kyverno /usr/local/bin/
+
+      - name: Test policies
+        run: |
+          cd policies/
+          kyverno test . --detailed-results
+
+  # Run full test suite with Chainsaw
+  test-chainsaw:
+    name: Chainsaw Integration Tests
+    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/kyverno-test.yml@v1
+    with:
+      policy-path: policies/
+      test-framework: chainsaw
+      fail-fast: true
 ```
 
 ---

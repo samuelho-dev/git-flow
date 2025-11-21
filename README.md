@@ -36,9 +36,10 @@ Production-grade, vetted GitHub Actions workflows for Kubernetes GitOps infrastr
 
 | Workflow | Description | Status |
 |----------|-------------|--------|
-| `kubernetes/helm-lint.yml` | Helm chart linting and validation | 🚧 Coming Soon |
-| `kubernetes/helm-test.yml` | Helm unittest execution | 🚧 Coming Soon |
-| `kubernetes/helm-publish.yml` | Publish charts to OCI registry | 🚧 Coming Soon |
+| [`kubernetes/helm-lint.yml`](workflows/kubernetes/helm-lint.yml) | Helm chart linting, validation & kubeconform | ✅ Ready |
+| [`kubernetes/helm-test.yml`](workflows/kubernetes/helm-test.yml) | Helm unittest execution with JUnit reports | ✅ Ready |
+| [`kubernetes/helm-publish.yml`](workflows/kubernetes/helm-publish.yml) | Package & publish charts to OCI registries | ✅ Ready |
+| [`kubernetes/kyverno-test.yml`](workflows/kubernetes/kyverno-test.yml) | Kyverno policy testing with Chainsaw | ✅ Ready |
 
 ### Composite Actions
 

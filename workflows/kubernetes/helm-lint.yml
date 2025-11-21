@@ -1,0 +1,277 @@
+name: 'Helm Lint & Validate'
+
+on:
+  workflow_call:
+    inputs:
+      chart-path:
+        description: 'Path to Helm chart directory'
+        required: true
+        type: string
+      values-file:
+        description: 'Override values file (relative to chart-path)'
+        required: false
+        type: string
+        default: 'values.yaml'
+      strict:
+        description: 'Use strict linting (fail on warnings)'
+        required: false
+        type: boolean
+        default: true
+      kubeconform:
+        description: 'Run kubeconform validation'
+        required: false
+        type: boolean
+        default: true
+      kubernetes-version:
+        description: 'Kubernetes version for kubeconform'
+        required: false
+        type: string
+        default: '1.30.0'
+      helm-docs-check:
+        description: 'Check if README.md is up to date'
+        required: false
+        type: boolean
+        default: true
+      extra-values:
+        description: 'Additional values files (comma-separated)'
+        required: false
+        type: string
+        default: ''
+      schema-validation:
+        description: 'Validate against JSON schemas'
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      lint-result:
+        description: 'Lint result (success/failure)'
+        value: ${{ jobs.lint.outputs.result }}
+      chart-version:
+        description: 'Chart version from Chart.yaml'
+        value: ${{ jobs.lint.outputs.version }}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Helm Lint & Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      result: ${{ steps.lint.outcome }}
+      version: ${{ steps.chart-info.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Helm
+        uses: azure/setup-helm@fe7b79cd5ee1e45176fcad797de68ecaf3ca4814 # v4.2.0
+        with:
+          version: v3.16.3
+
+      - name: Install yq
+        run: |
+          YQ_VERSION="v4.44.6"
+          wget -q "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -O /tmp/yq
+          sudo mv /tmp/yq /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Get chart information
+        id: chart-info
+        working-directory: ${{ inputs.chart-path }}
+        run: |
+          CHART_NAME=$(yq eval '.name' Chart.yaml)
+          CHART_VERSION=$(yq eval '.version' Chart.yaml)
+          CHART_APP_VERSION=$(yq eval '.appVersion' Chart.yaml)
+          echo "name=$CHART_NAME" >> $GITHUB_OUTPUT
+          echo "version=$CHART_VERSION" >> $GITHUB_OUTPUT
+          echo "app-version=$CHART_APP_VERSION" >> $GITHUB_OUTPUT
+          echo "Chart: $CHART_NAME v$CHART_VERSION (app: $CHART_APP_VERSION)"
+
+      - name: Add Helm repositories
+        working-directory: ${{ inputs.chart-path }}
+        run: |
+          # Extract and add chart dependencies
+          if [ -f "Chart.yaml" ]; then
+            yq eval '.dependencies[].repository' Chart.yaml | grep -v "^null$" | while read -r repo; do
+              if [[ "$repo" == http* ]]; then
+                repo_name=$(echo "$repo" | sed 's|https://||;s|http://||;s|/|-|g')
+                echo "Adding repository: $repo_name ($repo)"
+                helm repo add "$repo_name" "$repo" || true
+              fi
+            done
+          fi
+          helm repo update || true
+
+      - name: Update chart dependencies
+        working-directory: ${{ inputs.chart-path }}
+        run: |
+          if [ -f "Chart.yaml" ] && yq eval '.dependencies' Chart.yaml | grep -q "name:"; then
+            echo "Updating chart dependencies..."
+            helm dependency update
+          else
+            echo "No dependencies to update"
+          fi
+
+      - name: Build values arguments
+        id: values-args
+        run: |
+          ARGS="-f ${{ inputs.chart-path }}/${{ inputs.values-file }}"
+
+          # Add extra values files
+          if [ -n "${{ inputs.extra-values }}" ]; then
+            IFS=',' read -ra FILES <<< "${{ inputs.extra-values }}"
+            for file in "${FILES[@]}"; do
+              ARGS="$ARGS -f ${{ inputs.chart-path }}/$file"
+            done
+          fi
+
+          echo "args=$ARGS" >> $GITHUB_OUTPUT
+          echo "Values arguments: $ARGS"
+
+      - name: Helm lint
+        id: lint
+        working-directory: ${{ inputs.chart-path }}
+        run: |
+          echo "Running helm lint..."
+          if [ "${{ inputs.strict }}" == "true" ]; then
+            helm lint . ${{ steps.values-args.outputs.args }} --strict
+          else
+            helm lint . ${{ steps.values-args.outputs.args }}
+          fi
+
+      - name: Helm template (dry-run)
+        working-directory: ${{ inputs.chart-path }}
+        run: |
+          echo "Running helm template dry-run..."
+          helm template test-release . ${{ steps.values-args.outputs.args }} \
+            --namespace test \
+            --dry-run > /tmp/manifests.yaml
+
+          echo "Generated manifests (first 50 lines):"
+          head -n 50 /tmp/manifests.yaml
+
+      - name: Validate against JSON schemas
+        if: inputs.schema-validation
+        working-directory: ${{ inputs.chart-path }}
+        run: |
+          echo "Validating chart against JSON schemas..."
+
+          # Check if schema files exist
+          if [ -d "schemas" ]; then
+            echo "Found schemas directory"
+            SCHEMA_COUNT=$(find schemas -name "*.json" | wc -l)
+            echo "Found $SCHEMA_COUNT JSON schemas"
+
+            # Validate values.yaml against schema if it exists
+            if [ -f "schemas/values.schema.json" ]; then
+              echo "Validating ${{ inputs.values-file }} against values.schema.json"
+              yq eval -o=json ${{ inputs.values-file }} | \
+                jq -S . > /tmp/values.json
+
+              # Install ajv-cli for JSON schema validation
+              npm install -g ajv-cli@5.0.0 2>/dev/null || true
+              ajv validate -s schemas/values.schema.json -d /tmp/values.json
+            else
+              echo "⚠️  No values.schema.json found in schemas/ directory"
+            fi
+          else
+            echo "⚠️  No schemas/ directory found - skipping schema validation"
+          fi
+
+      - name: Install kubeconform
+        if: inputs.kubeconform
+        run: |
+          KUBECONFORM_VERSION="v0.6.7"
+          wget -q "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          tar xf kubeconform-linux-amd64.tar.gz
+          sudo mv kubeconform /usr/local/bin/
+          kubeconform -v
+
+      - name: Validate with kubeconform
+        if: inputs.kubeconform
+        run: |
+          echo "Validating manifests with kubeconform..."
+          kubeconform \
+            -summary \
+            -output json \
+            -kubernetes-version ${{ inputs.kubernetes-version }} \
+            -strict \
+            -ignore-missing-schemas \
+            /tmp/manifests.yaml | tee kubeconform-results.json
+
+          # Check for validation errors
+          INVALID=$(jq -r '.summary.invalid' kubeconform-results.json)
+          if [ "$INVALID" -gt 0 ]; then
+            echo "❌ Found $INVALID invalid manifests"
+            exit 1
+          fi
+
+      - name: Install helm-docs
+        if: inputs.helm-docs-check
+        run: |
+          HELM_DOCS_VERSION="1.14.2"
+          wget -q "https://github.com/norwoodj/helm-docs/releases/download/v${HELM_DOCS_VERSION}/helm-docs_${HELM_DOCS_VERSION}_Linux_x86_64.tar.gz"
+          tar xf "helm-docs_${HELM_DOCS_VERSION}_Linux_x86_64.tar.gz"
+          sudo mv helm-docs /usr/local/bin/
+          helm-docs --version
+
+      - name: Check helm-docs
+        if: inputs.helm-docs-check
+        working-directory: ${{ inputs.chart-path }}
+        run: |
+          echo "Checking if README.md is up to date..."
+          helm-docs --dry-run
+
+          if git diff --exit-code README.md; then
+            echo "✅ README.md is up to date"
+          else
+            echo "❌ README.md is out of date. Run 'helm-docs' to update."
+            exit 1
+          fi
+
+      - name: Upload validation results
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: helm-lint-results
+          path: |
+            /tmp/manifests.yaml
+            kubeconform-results.json
+          retention-days: 7
+
+      - name: Generate lint summary
+        if: always()
+        run: |
+          echo "## ☸️  Helm Lint Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Chart:** \`${{ steps.chart-info.outputs.name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ steps.chart-info.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**App Version:** \`${{ steps.chart-info.outputs.app-version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.lint.outcome }}" == "success" ]; then
+            echo "✅ **Helm lint: Passed**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Helm lint: Failed**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ inputs.kubeconform }}" == "true" ] && [ -f "kubeconform-results.json" ]; then
+            VALID=$(jq -r '.summary.valid' kubeconform-results.json)
+            INVALID=$(jq -r '.summary.invalid' kubeconform-results.json)
+            SKIPPED=$(jq -r '.summary.skipped' kubeconform-results.json)
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Kubeconform Validation" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Valid: $VALID" >> $GITHUB_STEP_SUMMARY
+            echo "- ❌ Invalid: $INVALID" >> $GITHUB_STEP_SUMMARY
+            echo "- ⏭️  Skipped: $SKIPPED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ inputs.helm-docs-check }}" == "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **README.md is up to date**" >> $GITHUB_STEP_SUMMARY
+          fi
