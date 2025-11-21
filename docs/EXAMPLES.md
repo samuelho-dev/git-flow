@@ -12,6 +12,8 @@ Complete examples for common CI/CD scenarios using git-flow reusable workflows.
 6. [Scheduled Security Scans](#scheduled-security-scans)
 7. [Helm Chart CI/CD](#helm-chart-cicd)
 8. [Kyverno Policy Testing](#kyverno-policy-testing)
+9. [Terraform CI/CD](#terraform-cicd)
+10. [GitOps Pipeline](#gitops-pipeline)
 
 ---
 
@@ -773,6 +775,687 @@ jobs:
       policy-path: policies/
       test-framework: chainsaw
       fail-fast: true
+```
+
+---
+
+## Terraform CI/CD
+
+Complete Infrastructure as Code pipeline with validation, planning, and deployment.
+
+### Complete Terraform Pipeline
+
+Full Terraform workflow with validate → plan → apply stages.
+
+```yaml
+name: Terraform CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+  pull_request:
+    paths:
+      - 'terraform/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+  security-events: write
+
+jobs:
+  # Stage 1: Validate
+  validate:
+    name: Validate Terraform
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/validate.yml@v1
+    with:
+      terraform-path: terraform/environments/prod
+      terraform-version: 1.9.8
+      fmt-check: true
+      tfsec-scan: true
+      checkov-scan: true
+      terraform-docs-check: true
+    secrets:
+      terraform-token: ${{ secrets.TF_API_TOKEN }}
+
+  # Stage 2: Plan (on all branches)
+  plan:
+    name: Plan Infrastructure Changes
+    needs: validate
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    with:
+      terraform-path: terraform/environments/prod
+      terraform-version: 1.9.8
+      upload-plan: true
+      enable-infracost: true
+      post-pr-comment: true
+    secrets:
+      terraform-token: ${{ secrets.TF_API_TOKEN }}
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      infracost-api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+  # Stage 3: Apply (main branch only)
+  apply:
+    name: Apply Infrastructure Changes
+    needs: plan
+    if: github.ref == 'refs/heads/main'
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    with:
+      terraform-path: terraform/environments/prod
+      terraform-version: 1.9.8
+      plan-artifact-name: terraform-plan-${{ github.sha }}
+      environment: production  # Requires approval
+      backup-state: true
+    secrets:
+      terraform-token: ${{ secrets.TF_API_TOKEN }}
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+  # Stage 4: Verification
+  verify:
+    name: Post-Apply Verification
+    needs: apply
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify infrastructure
+        run: |
+          echo "✅ Infrastructure deployed successfully"
+          echo "Revision: ${{ github.sha }}"
+          echo "Environment: production"
+```
+
+### Multi-Environment Terraform
+
+Deploy infrastructure to multiple environments with matrix strategy.
+
+```yaml
+name: Multi-Environment Infrastructure
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+jobs:
+  # Determine which environments to deploy
+  select-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      environments: ${{ steps.set-env.outputs.environments }}
+    steps:
+      - id: set-env
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            # Manual trigger: deploy to selected environment
+            echo "environments=[\"${{ inputs.environment }}\"]" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            # Main branch: deploy to staging and production
+            echo "environments=[\"staging\", \"production\"]" >> $GITHUB_OUTPUT
+          else
+            # Develop branch: deploy to dev
+            echo "environments=[\"dev\"]" >> $GITHUB_OUTPUT
+          fi
+
+  # Validate all environments
+  validate:
+    name: Validate ${{ matrix.env }}
+    strategy:
+      matrix:
+        env: [dev, staging, production]
+      fail-fast: false
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/validate.yml@v1
+    with:
+      terraform-path: terraform/environments/${{ matrix.env }}
+      tfsec-scan: true
+      checkov-scan: true
+    secrets:
+      terraform-token: ${{ secrets.TF_API_TOKEN }}
+
+  # Plan for selected environments
+  plan:
+    name: Plan ${{ matrix.env }}
+    needs: [select-environment, validate]
+    strategy:
+      matrix:
+        env: ${{ fromJson(needs.select-environment.outputs.environments) }}
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    with:
+      terraform-path: terraform/environments/${{ matrix.env }}
+      upload-plan: true
+      enable-infracost: true
+    secrets:
+      terraform-token: ${{ secrets.TF_API_TOKEN }}
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      infracost-api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+  # Apply to selected environments sequentially
+  apply-dev:
+    name: Apply to Dev
+    needs: plan
+    if: contains(fromJson(needs.select-environment.outputs.environments), 'dev')
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    with:
+      terraform-path: terraform/environments/dev
+      plan-artifact-name: terraform-plan-${{ github.sha }}
+      environment: development
+    secrets:
+      terraform-token: ${{ secrets.TF_API_TOKEN }}
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+  apply-staging:
+    name: Apply to Staging
+    needs: [plan, apply-dev]
+    if: |
+      always() &&
+      !cancelled() &&
+      (needs.apply-dev.result == 'success' || needs.apply-dev.result == 'skipped') &&
+      contains(fromJson(needs.select-environment.outputs.environments), 'staging')
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    with:
+      terraform-path: terraform/environments/staging
+      plan-artifact-name: terraform-plan-${{ github.sha }}
+      environment: staging
+    secrets:
+      terraform-token: ${{ secrets.TF_API_TOKEN }}
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+  apply-production:
+    name: Apply to Production
+    needs: [plan, apply-staging]
+    if: |
+      always() &&
+      !cancelled() &&
+      (needs.apply-staging.result == 'success' || needs.apply-staging.result == 'skipped') &&
+      contains(fromJson(needs.select-environment.outputs.environments), 'production')
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    with:
+      terraform-path: terraform/environments/production
+      plan-artifact-name: terraform-plan-${{ github.sha }}
+      environment: production  # Requires manual approval
+      backup-state: true
+    secrets:
+      terraform-token: ${{ secrets.TF_API_TOKEN }}
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+```
+
+### Terraform with Security Focus
+
+Infrastructure pipeline with comprehensive security scanning.
+
+```yaml
+name: Secure Infrastructure Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 3 * * 1'  # Weekly Monday 3 AM
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+  id-token: write
+
+jobs:
+  # Security validation
+  validate:
+    name: Security Validation
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/validate.yml@v1
+    with:
+      terraform-path: terraform/
+      terraform-version: 1.9.8
+      fmt-check: true
+      tfsec-scan: true
+      tfsec-severity: MEDIUM,HIGH,CRITICAL
+      checkov-scan: true
+      checkov-severity: MEDIUM,HIGH,CRITICAL
+      terraform-docs-check: true
+    secrets:
+      terraform-token: ${{ secrets.TF_API_TOKEN }}
+
+  # Additional secret scanning
+  scan-secrets:
+    name: Scan for Secrets
+    uses: samuelho-dev/git-flow/.github/workflows/security/gitleaks-scan.yml@v1
+    with:
+      fail-on-findings: true
+      format: sarif
+
+  # Cost estimation
+  plan-with-cost:
+    name: Plan with Cost Estimation
+    needs: [validate, scan-secrets]
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    with:
+      terraform-path: terraform/
+      enable-infracost: true
+      post-pr-comment: true
+      upload-plan: true
+    secrets:
+      terraform-token: ${{ secrets.TF_API_TOKEN }}
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      infracost-api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+  # Apply with approval gate
+  apply:
+    name: Apply Infrastructure
+    needs: plan-with-cost
+    if: github.ref == 'refs/heads/main'
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    with:
+      terraform-path: terraform/
+      plan-artifact-name: terraform-plan-${{ github.sha }}
+      environment: production
+      backup-state: true
+    secrets:
+      terraform-token: ${{ secrets.TF_API_TOKEN }}
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+  # Security report
+  security-report:
+    name: Security Report
+    needs: [validate, scan-secrets, plan-with-cost]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate security summary
+        run: |
+          echo "## 🔒 Infrastructure Security Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- tfsec scan: ${{ needs.validate.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Checkov scan: ${{ needs.validate.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Secret scan: ${{ needs.scan-secrets.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check Security tab for detailed findings." >> $GITHUB_STEP_SUMMARY
+```
+
+---
+
+## GitOps Pipeline
+
+Complete CI → GitOps → CD pipelines with automated manifest updates and ArgoCD sync.
+
+### Complete GitOps Pipeline
+
+End-to-end pipeline: Build Docker image → Update manifests → Sync ArgoCD.
+
+```yaml
+name: GitOps CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Dockerfile'
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  security-events: write
+
+jobs:
+  # Stage 1: Build and push Docker image
+  build:
+    name: Build & Push Image
+    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    with:
+      context: .
+      dockerfile: ./Dockerfile
+      image: my-app
+      platforms: linux/amd64,linux/arm64
+      push: true
+      scan: true
+      sign: true
+      sbom: true
+    secrets: inherit
+
+  # Stage 2: Update Kubernetes manifests
+  update-manifests:
+    name: Update Manifests
+    needs: build
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    with:
+      manifest-path: deploy/k8s/overlays/production
+      update-type: image
+      image-name: ghcr.io/${{ github.repository_owner }}/my-app
+      image-tag: sha-${{ github.sha }}
+      file-pattern: '**/*.yaml'
+      commit-message: |
+        chore(gitops): update my-app to sha-${{ github.sha }}
+
+        - Source commit: ${{ github.sha }}
+        - Triggered by: @${{ github.actor }}
+        - Workflow: ${{ github.workflow }}
+      create-pr: false  # Direct commit to main
+      target-branch: main
+
+  # Stage 3: Sync ArgoCD application
+  argocd-sync:
+    name: Sync ArgoCD
+    needs: update-manifests
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    with:
+      argocd-server: argocd.example.com
+      argocd-app-name: my-app-production
+      sync-strategy: auto
+      prune: false
+      force: false
+      wait-for-sync: true
+      sync-timeout: 300
+      health-check: true
+    secrets:
+      argocd-token: ${{ secrets.ARGOCD_TOKEN }}
+
+  # Stage 4: Verification
+  verify-deployment:
+    name: Verify Deployment
+    needs: argocd-sync
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify deployment
+        run: |
+          echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Application:** my-app-production" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ghcr.io/${{ github.repository_owner }}/my-app:sha-${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Sync Status:** ${{ needs.argocd-sync.outputs.sync-status }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Health Status:** ${{ needs.argocd-sync.outputs.health-status }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Send notification
+        run: |
+          # Add your notification logic here (Slack, email, etc.)
+          echo "Deployment notification sent"
+```
+
+### GitOps with Pull Request
+
+Create PR for manifest updates instead of direct commit (safer for production).
+
+```yaml
+name: GitOps with PR
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Dockerfile'
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  # Build image
+  build:
+    name: Build Image
+    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    with:
+      image: my-app
+      push: true
+      scan: true
+    secrets: inherit
+
+  # Create PR with manifest updates
+  update-manifests:
+    name: Update Manifests via PR
+    needs: build
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    with:
+      manifest-path: deploy/k8s/production
+      update-type: image
+      image-name: ghcr.io/${{ github.repository_owner }}/my-app
+      image-tag: sha-${{ github.sha }}
+      commit-message: |
+        chore(gitops): update my-app to sha-${{ github.sha }}
+      create-pr: true  # Create PR instead of direct commit
+      pr-branch: gitops/my-app-sha-${{ github.sha }}
+      target-branch: main
+
+  # Comment on PR with deployment info
+  pr-comment:
+    name: Add Deployment Info to PR
+    needs: update-manifests
+    if: needs.update-manifests.outputs.pr-url != ''
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prUrl = '${{ needs.update-manifests.outputs.pr-url }}';
+            const prNumber = prUrl.split('/').pop();
+
+            github.rest.issues.createComment({
+              issue_number: prNumber,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🚀 Deployment Ready
+
+              **Image:** \`ghcr.io/${{ github.repository_owner }}/my-app:sha-${{ github.sha }}\`
+              **Files Updated:** ${{ needs.update-manifests.outputs.files-updated }}
+
+              ### Next Steps
+              1. Review manifest changes
+              2. Merge this PR to trigger ArgoCD sync
+              3. Monitor application health in ArgoCD dashboard
+
+              ---
+              *Triggered by: ${{ github.sha }} (@${{ github.actor }})*`
+            });
+```
+
+### Multi-Application GitOps
+
+Update and sync multiple applications in parallel.
+
+```yaml
+name: Multi-Application GitOps
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  # Build all services
+  build-backend:
+    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    with:
+      image: my-app-backend
+      dockerfile: ./services/backend/Dockerfile
+      push: true
+    secrets: inherit
+
+  build-frontend:
+    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    with:
+      image: my-app-frontend
+      dockerfile: ./services/frontend/Dockerfile
+      push: true
+    secrets: inherit
+
+  build-worker:
+    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    with:
+      image: my-app-worker
+      dockerfile: ./services/worker/Dockerfile
+      push: true
+    secrets: inherit
+
+  # Update manifests for all services
+  update-backend:
+    needs: build-backend
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    with:
+      manifest-path: deploy/k8s/backend
+      update-type: image
+      image-name: ghcr.io/${{ github.repository_owner }}/my-app-backend
+      image-tag: sha-${{ github.sha }}
+
+  update-frontend:
+    needs: build-frontend
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    with:
+      manifest-path: deploy/k8s/frontend
+      update-type: image
+      image-name: ghcr.io/${{ github.repository_owner }}/my-app-frontend
+      image-tag: sha-${{ github.sha }}
+
+  update-worker:
+    needs: build-worker
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    with:
+      manifest-path: deploy/k8s/worker
+      update-type: image
+      image-name: ghcr.io/${{ github.repository_owner }}/my-app-worker
+      image-tag: sha-${{ github.sha }}
+
+  # Sync all ArgoCD applications
+  sync-backend:
+    needs: update-backend
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    with:
+      argocd-server: argocd.example.com
+      argocd-app-name: my-app-backend
+      wait-for-sync: true
+    secrets:
+      argocd-token: ${{ secrets.ARGOCD_TOKEN }}
+
+  sync-frontend:
+    needs: update-frontend
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    with:
+      argocd-server: argocd.example.com
+      argocd-app-name: my-app-frontend
+      wait-for-sync: true
+    secrets:
+      argocd-token: ${{ secrets.ARGOCD_TOKEN }}
+
+  sync-worker:
+    needs: update-worker
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    with:
+      argocd-server: argocd.example.com
+      argocd-app-name: my-app-worker
+      wait-for-sync: true
+    secrets:
+      argocd-token: ${{ secrets.ARGOCD_TOKEN }}
+
+  # Summary
+  deployment-summary:
+    name: Deployment Summary
+    needs: [sync-backend, sync-frontend, sync-worker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## 🚀 Multi-Application Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Applications Synced" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend:** ${{ needs.sync-backend.outputs.sync-status }} / ${{ needs.sync-backend.outputs.health-status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend:** ${{ needs.sync-frontend.outputs.sync-status }} / ${{ needs.sync-frontend.outputs.health-status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Worker:** ${{ needs.sync-worker.outputs.sync-status }} / ${{ needs.sync-worker.outputs.health-status }}" >> $GITHUB_STEP_SUMMARY
+```
+
+### Helm Values Update
+
+Update Helm values files in GitOps repository.
+
+```yaml
+name: Update Helm Values
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to update'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      helm-key:
+        description: 'Helm value key (e.g., image.tag)'
+        required: true
+        type: string
+      helm-value:
+        description: 'New value'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-helm-values:
+    name: Update Helm Values
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    with:
+      manifest-path: deploy/helm/my-app/environments/${{ inputs.environment }}
+      update-type: helm-values
+      helm-key: ${{ inputs.helm-key }}
+      helm-value: ${{ inputs.helm-value }}
+      commit-message: |
+        chore(helm): update ${{ inputs.helm-key }} in ${{ inputs.environment }}
+
+        New value: ${{ inputs.helm-value }}
+        Triggered by: @${{ github.actor }}
+      create-pr: true
+      pr-branch: helm/update-${{ inputs.environment }}-${{ github.run_number }}
+
+  sync-after-merge:
+    name: Sync ArgoCD (after PR merge)
+    needs: update-helm-values
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    with:
+      argocd-server: argocd.example.com
+      argocd-app-name: my-app-${{ inputs.environment }}
+      wait-for-sync: true
+      health-check: true
+    secrets:
+      argocd-token: ${{ secrets.ARGOCD_TOKEN }}
 ```
 
 ---

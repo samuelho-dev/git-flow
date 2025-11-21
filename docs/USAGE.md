@@ -8,9 +8,11 @@ Complete guide for using git-flow reusable workflows in your projects.
 2. [Docker Workflows](#docker-workflows)
 3. [Security Workflows](#security-workflows)
 4. [Kubernetes Workflows](#kubernetes-workflows)
-5. [Composite Actions](#composite-actions)
-6. [Best Practices](#best-practices)
-7. [Troubleshooting](#troubleshooting)
+5. [Infrastructure Workflows](#infrastructure-workflows)
+6. [GitOps Workflows](#gitops-workflows)
+7. [Composite Actions](#composite-actions)
+8. [Best Practices](#best-practices)
+9. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -583,6 +585,354 @@ jobs:
       kyverno-version: v1.13.0
       chainsaw-version: v0.2.14
       report-format: junit
+```
+
+---
+
+## Infrastructure Workflows
+
+### `terraform/validate.yml`
+
+Validate Terraform configuration with formatting checks and security scanning.
+
+#### Inputs
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `terraform-path` | string | **required** | Path to Terraform directory |
+| `terraform-version` | string | `1.9.8` | Terraform version |
+| `format-check` | boolean | `true` | Check Terraform formatting |
+| `tfsec-scan` | boolean | `true` | Run tfsec security scan |
+| `checkov-scan` | boolean | `true` | Run Checkov compliance scan |
+| `terraform-docs-check` | boolean | `false` | Check if README.md is up to date |
+| `upload-sarif` | boolean | `true` | Upload security results to GitHub Security |
+| `working-directory` | string | `.` | Working directory for commands |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `validation-result` | Validation result (success/failure) |
+| `format-result` | Format check result |
+| `security-findings` | Number of security findings |
+
+#### Examples
+
+**Basic Terraform validation:**
+```yaml
+jobs:
+  validate:
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/validate.yml@v1
+    with:
+      terraform-path: terraform/environments/prod
+```
+
+**Full validation with docs check:**
+```yaml
+jobs:
+  validate:
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/validate.yml@v1
+    with:
+      terraform-path: terraform/environments/prod
+      format-check: true
+      tfsec-scan: true
+      checkov-scan: true
+      terraform-docs-check: true
+```
+
+---
+
+### `terraform/plan.yml`
+
+Generate Terraform plan with cost estimation and PR comments.
+
+#### Inputs
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `terraform-path` | string | **required** | Path to Terraform directory |
+| `terraform-version` | string | `1.9.8` | Terraform version |
+| `plan-args` | string | `''` | Additional arguments for terraform plan |
+| `var-file` | string | `''` | Path to tfvars file (relative to terraform-path) |
+| `working-directory` | string | `.` | Working directory for commands |
+| `comment-pr` | boolean | `true` | Comment plan output on PR |
+| `cost-estimation` | boolean | `false` | Run Infracost for cost estimation |
+| `upload-plan` | boolean | `true` | Upload plan file as artifact |
+
+#### Secrets
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `terraform-token` | No | Terraform Cloud/Enterprise API token |
+| `aws-access-key-id` | No | AWS Access Key ID (if using AWS) |
+| `aws-secret-access-key` | No | AWS Secret Access Key (if using AWS) |
+| `infracost-api-key` | No | Infracost API key for cost estimation |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `plan-result` | Plan result (success/failure) |
+| `resources-to-add` | Number of resources to add |
+| `resources-to-change` | Number of resources to change |
+| `resources-to-destroy` | Number of resources to destroy |
+
+#### Examples
+
+**Basic Terraform plan:**
+```yaml
+jobs:
+  plan:
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    with:
+      terraform-path: terraform/environments/prod
+    secrets: inherit
+```
+
+**Plan with cost estimation:**
+```yaml
+jobs:
+  plan:
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    with:
+      terraform-path: terraform/environments/prod
+      cost-estimation: true
+      var-file: prod.tfvars
+    secrets:
+      terraform-token: ${{ secrets.TF_API_TOKEN }}
+      infracost-api-key: ${{ secrets.INFRACOST_API_KEY }}
+```
+
+**Plan with AWS credentials:**
+```yaml
+jobs:
+  plan:
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    with:
+      terraform-path: terraform/aws
+      comment-pr: true
+    secrets:
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+```
+
+---
+
+### `terraform/apply.yml`
+
+Apply Terraform changes with state backup and approval gates.
+
+#### Inputs
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `terraform-path` | string | **required** | Path to Terraform directory |
+| `terraform-version` | string | `1.9.8` | Terraform version |
+| `plan-artifact-name` | string | `''` | Name of plan artifact to apply |
+| `apply-args` | string | `''` | Additional arguments for terraform apply |
+| `working-directory` | string | `.` | Working directory for commands |
+| `environment` | string | `''` | GitHub environment for approval |
+| `backup-state` | boolean | `true` | Backup state file before apply |
+| `skip-plan` | boolean | `false` | Skip plan validation (NOT RECOMMENDED) |
+
+#### Secrets
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `terraform-token` | No | Terraform Cloud/Enterprise API token |
+| `aws-access-key-id` | No | AWS Access Key ID (if using AWS) |
+| `aws-secret-access-key` | No | AWS Secret Access Key (if using AWS) |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `apply-result` | Apply result (success/failure) |
+| `resources-applied` | Number of resources applied |
+
+#### Examples
+
+**Apply with plan artifact:**
+```yaml
+jobs:
+  plan:
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    with:
+      terraform-path: terraform/environments/prod
+
+  apply:
+    needs: plan
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    with:
+      terraform-path: terraform/environments/prod
+      plan-artifact-name: terraform-plan-${{ github.sha }}
+      environment: production
+    secrets: inherit
+```
+
+**Apply with environment approval:**
+```yaml
+jobs:
+  apply:
+    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    with:
+      terraform-path: terraform/environments/prod
+      environment: production  # Requires GitHub Environment approval
+      backup-state: true
+    secrets: inherit
+```
+
+---
+
+## GitOps Workflows
+
+### `gitops/update-manifests.yml`
+
+Update Kubernetes manifests with new image tags or Helm values.
+
+#### Inputs
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `manifest-path` | string | **required** | Path to manifests directory |
+| `update-type` | string | `image` | Update type (image, helm-values, kustomize) |
+| `image-name` | string | `''` | Image name to update (for image type) |
+| `image-tag` | string | `''` | New image tag |
+| `file-pattern` | string | `**/*.yaml` | File pattern to update (glob) |
+| `helm-key` | string | `''` | Helm value key path (e.g., image.tag) |
+| `helm-value` | string | `''` | Helm value to set |
+| `commit-message` | string | `''` | Git commit message |
+| `create-pr` | boolean | `false` | Create pull request instead of direct commit |
+| `pr-branch` | string | `gitops/auto-update` | Branch name for PR |
+| `target-branch` | string | `main` | Target branch for updates |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `update-result` | Update result (success/failure) |
+| `files-updated` | Number of files updated |
+| `pr-url` | Pull request URL (if created) |
+
+#### Examples
+
+**Update image tag:**
+```yaml
+jobs:
+  update:
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    with:
+      manifest-path: k8s/apps/my-app
+      update-type: image
+      image-name: ghcr.io/owner/my-app
+      image-tag: v1.2.3
+```
+
+**Update with PR creation:**
+```yaml
+jobs:
+  update:
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    with:
+      manifest-path: k8s/apps/my-app
+      update-type: image
+      image-name: ghcr.io/owner/my-app
+      image-tag: ${{ github.sha }}
+      create-pr: true
+      pr-branch: gitops/update-${{ github.sha }}
+```
+
+**Update Helm values:**
+```yaml
+jobs:
+  update:
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    with:
+      manifest-path: helm/my-app
+      update-type: helm-values
+      helm-key: image.tag
+      helm-value: v1.2.3
+      commit-message: "chore: update image tag to v1.2.3"
+```
+
+---
+
+### `gitops/argocd-sync.yml`
+
+Trigger ArgoCD application sync with health verification.
+
+#### Inputs
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `argocd-server` | string | **required** | ArgoCD server URL |
+| `argocd-app-name` | string | **required** | ArgoCD application name |
+| `argocd-namespace` | string | `argocd` | ArgoCD namespace |
+| `sync-strategy` | string | `auto` | Sync strategy (auto, apply, hook) |
+| `prune` | boolean | `false` | Prune resources during sync |
+| `force` | boolean | `false` | Force sync (override diverged state) |
+| `dry-run` | boolean | `false` | Perform dry-run sync |
+| `wait-for-sync` | boolean | `true` | Wait for sync to complete |
+| `sync-timeout` | number | `300` | Sync timeout in seconds |
+| `health-check` | boolean | `true` | Check application health after sync |
+| `revision` | string | `''` | Target revision (branch, tag, commit) |
+
+#### Secrets
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `argocd-token` | Yes | ArgoCD authentication token |
+| `kubeconfig` | No | Kubernetes config (if accessing cluster directly) |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `sync-result` | Sync result (success/failure) |
+| `sync-status` | Sync status (Synced, OutOfSync, Unknown) |
+| `health-status` | Health status (Healthy, Progressing, Degraded, Suspended) |
+
+#### Examples
+
+**Basic ArgoCD sync:**
+```yaml
+jobs:
+  sync:
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    with:
+      argocd-server: argocd.example.com
+      argocd-app-name: my-app
+    secrets:
+      argocd-token: ${{ secrets.ARGOCD_TOKEN }}
+```
+
+**Sync with prune and force:**
+```yaml
+jobs:
+  sync:
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    with:
+      argocd-server: argocd.example.com
+      argocd-app-name: my-app
+      prune: true
+      force: true
+      wait-for-sync: true
+      sync-timeout: 600
+    secrets:
+      argocd-token: ${{ secrets.ARGOCD_TOKEN }}
+```
+
+**Dry-run sync:**
+```yaml
+jobs:
+  sync-test:
+    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    with:
+      argocd-server: argocd.example.com
+      argocd-app-name: my-app
+      dry-run: true
+    secrets:
+      argocd-token: ${{ secrets.ARGOCD_TOKEN }}
 ```
 
 ---
