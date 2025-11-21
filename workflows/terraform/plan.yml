@@ -1,0 +1,327 @@
+name: 'Terraform Plan'
+
+on:
+  workflow_call:
+    inputs:
+      terraform-path:
+        description: 'Path to Terraform directory'
+        required: true
+        type: string
+      terraform-version:
+        description: 'Terraform version'
+        required: false
+        type: string
+        default: '1.9.8'
+      plan-args:
+        description: 'Additional arguments for terraform plan'
+        required: false
+        type: string
+        default: ''
+      var-file:
+        description: 'Path to tfvars file (relative to terraform-path)'
+        required: false
+        type: string
+        default: ''
+      working-directory:
+        description: 'Working directory for commands'
+        required: false
+        type: string
+        default: '.'
+      comment-pr:
+        description: 'Comment plan output on PR'
+        required: false
+        type: boolean
+        default: true
+      cost-estimation:
+        description: 'Run Infracost for cost estimation'
+        required: false
+        type: boolean
+        default: false
+      upload-plan:
+        description: 'Upload plan file as artifact'
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      terraform-token:
+        description: 'Terraform Cloud/Enterprise API token'
+        required: false
+      aws-access-key-id:
+        description: 'AWS Access Key ID (if using AWS)'
+        required: false
+      aws-secret-access-key:
+        description: 'AWS Secret Access Key (if using AWS)'
+        required: false
+      infracost-api-key:
+        description: 'Infracost API key'
+        required: false
+    outputs:
+      plan-result:
+        description: 'Plan result (success/failure)'
+        value: ${{ jobs.plan.outputs.result }}
+      resources-to-add:
+        description: 'Number of resources to add'
+        value: ${{ jobs.plan.outputs.to-add }}
+      resources-to-change:
+        description: 'Number of resources to change'
+        value: ${{ jobs.plan.outputs.to-change }}
+      resources-to-destroy:
+        description: 'Number of resources to destroy'
+        value: ${{ jobs.plan.outputs.to-destroy }}
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      result: ${{ steps.plan.outcome }}
+      to-add: ${{ steps.parse-plan.outputs.to-add }}
+      to-change: ${{ steps.parse-plan.outputs.to-change }}
+      to-destroy: ${{ steps.parse-plan.outputs.to-destroy }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          cli_config_credentials_token: ${{ secrets.terraform-token }}
+
+      - name: Configure AWS Credentials
+        if: secrets.aws-access-key-id != ''
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          aws-access-key-id: ${{ secrets.aws-access-key-id }}
+          aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+          aws-region: us-east-1
+
+      - name: Terraform Init
+        working-directory: ${{ inputs.working-directory }}/${{ inputs.terraform-path }}
+        run: |
+          echo "Initializing Terraform..."
+          terraform init
+
+      - name: Build plan command
+        id: build-cmd
+        run: |
+          PLAN_CMD="terraform plan -no-color -out=tfplan"
+
+          if [ -n "${{ inputs.var-file }}" ]; then
+            PLAN_CMD="$PLAN_CMD -var-file=${{ inputs.var-file }}"
+          fi
+
+          if [ -n "${{ inputs.plan-args }}" ]; then
+            PLAN_CMD="$PLAN_CMD ${{ inputs.plan-args }}"
+          fi
+
+          echo "command=$PLAN_CMD" >> $GITHUB_OUTPUT
+          echo "Plan command: $PLAN_CMD"
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ inputs.working-directory }}/${{ inputs.terraform-path }}
+        continue-on-error: true
+        run: |
+          ${{ steps.build-cmd.outputs.command }} | tee plan-output.txt
+
+      - name: Parse plan output
+        if: always()
+        id: parse-plan
+        working-directory: ${{ inputs.working-directory }}/${{ inputs.terraform-path }}
+        run: |
+          if [ -f "plan-output.txt" ]; then
+            # Extract resource changes
+            TO_ADD=$(grep -oP 'Plan: \K\d+(?= to add)' plan-output.txt || echo "0")
+            TO_CHANGE=$(grep -oP 'to add, \K\d+(?= to change)' plan-output.txt || echo "0")
+            TO_DESTROY=$(grep -oP 'to change, \K\d+(?= to destroy)' plan-output.txt || echo "0")
+
+            echo "to-add=$TO_ADD" >> $GITHUB_OUTPUT
+            echo "to-change=$TO_CHANGE" >> $GITHUB_OUTPUT
+            echo "to-destroy=$TO_DESTROY" >> $GITHUB_OUTPUT
+
+            echo "Resources to add: $TO_ADD"
+            echo "Resources to change: $TO_CHANGE"
+            echo "Resources to destroy: $TO_DESTROY"
+          else
+            echo "to-add=0" >> $GITHUB_OUTPUT
+            echo "to-change=0" >> $GITHUB_OUTPUT
+            echo "to-destroy=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate human-readable plan
+        if: steps.plan.outcome == 'success'
+        working-directory: ${{ inputs.working-directory }}/${{ inputs.terraform-path }}
+        run: |
+          echo "Generating human-readable plan..."
+          terraform show -no-color tfplan > plan-readable.txt
+
+      - name: Setup Infracost
+        if: inputs.cost-estimation && secrets.infracost-api-key != ''
+        uses: infracost/actions/setup@68a2f57df0e29250cf3c9301368856f825c9bbcf # v3.0.1
+        with:
+          api-key: ${{ secrets.infracost-api-key }}
+
+      - name: Run Infracost
+        if: inputs.cost-estimation && secrets.infracost-api-key != ''
+        working-directory: ${{ inputs.working-directory }}/${{ inputs.terraform-path }}
+        run: |
+          echo "Running Infracost cost estimation..."
+          infracost breakdown \
+            --path . \
+            --format json \
+            --out-file infracost.json || echo "⚠️  Infracost estimation failed"
+
+          if [ -f "infracost.json" ]; then
+            infracost output \
+              --path infracost.json \
+              --format table \
+              --out-file cost-summary.txt
+          fi
+
+      - name: Create plan summary for PR
+        if: always() && inputs.comment-pr && github.event_name == 'pull_request'
+        working-directory: ${{ inputs.working-directory }}/${{ inputs.terraform-path }}
+        run: |
+          cat > plan-comment.md <<'EOF'
+          ## 🏗️  Terraform Plan - ${{ inputs.terraform-path }}
+
+          **Terraform Version:** \`${{ inputs.terraform-version }}\`
+          **Status:** ${{ steps.plan.outcome == 'success' && '✅ Success' || '❌ Failed' }}
+
+          ### Resource Changes
+
+          | Action | Count |
+          |--------|-------|
+          | 🟢 Add | ${{ steps.parse-plan.outputs.to-add }} |
+          | 🟡 Change | ${{ steps.parse-plan.outputs.to-change }} |
+          | 🔴 Destroy | ${{ steps.parse-plan.outputs.to-destroy }} |
+
+          EOF
+
+          if [ -f "cost-summary.txt" ]; then
+            echo "" >> plan-comment.md
+            echo "### 💰 Cost Estimation" >> plan-comment.md
+            echo "" >> plan-comment.md
+            echo "\`\`\`" >> plan-comment.md
+            cat cost-summary.txt >> plan-comment.md
+            echo "\`\`\`" >> plan-comment.md
+          fi
+
+          echo "" >> plan-comment.md
+          echo "<details>" >> plan-comment.md
+          echo "<summary>📋 Show Plan Output</summary>" >> plan-comment.md
+          echo "" >> plan-comment.md
+          echo "\`\`\`terraform" >> plan-comment.md
+          if [ -f "plan-output.txt" ]; then
+            # Limit output to 10000 characters
+            head -c 10000 plan-output.txt >> plan-comment.md
+            if [ $(wc -c < plan-output.txt) -gt 10000 ]; then
+              echo "" >> plan-comment.md
+              echo "... (output truncated, see workflow logs for full output)" >> plan-comment.md
+            fi
+          fi
+          echo "\`\`\`" >> plan-comment.md
+          echo "</details>" >> plan-comment.md
+
+          echo "" >> plan-comment.md
+          echo "---" >> plan-comment.md
+          echo "*Plan generated on $(date -u '+%Y-%m-%d %H:%M:%S UTC')*" >> plan-comment.md
+
+      - name: Comment plan on PR
+        if: always() && inputs.comment-pr && github.event_name == 'pull_request'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            const planComment = fs.readFileSync('${{ inputs.working-directory }}/${{ inputs.terraform-path }}/plan-comment.md', 'utf8');
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('🏗️  Terraform Plan - ${{ inputs.terraform-path }}')
+            );
+
+            // Update or create comment
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: planComment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: planComment
+              });
+            }
+
+      - name: Upload plan artifacts
+        if: always() && inputs.upload-plan
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: terraform-plan-${{ github.sha }}
+          path: |
+            ${{ inputs.working-directory }}/${{ inputs.terraform-path }}/tfplan
+            ${{ inputs.working-directory }}/${{ inputs.terraform-path }}/plan-output.txt
+            ${{ inputs.working-directory }}/${{ inputs.terraform-path }}/plan-readable.txt
+            ${{ inputs.working-directory }}/${{ inputs.terraform-path }}/infracost.json
+            ${{ inputs.working-directory }}/${{ inputs.terraform-path }}/cost-summary.txt
+          retention-days: 30
+
+      - name: Generate plan summary
+        if: always()
+        working-directory: ${{ inputs.working-directory }}/${{ inputs.terraform-path }}
+        run: |
+          {
+            echo "## 🏗️  Terraform Plan Summary"
+            echo ""
+            echo "**Terraform Path:** \`${{ inputs.terraform-path }}\`"
+            echo "**Terraform Version:** \`${{ inputs.terraform-version }}\`"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${{ steps.plan.outcome }}" == "success" ]; then
+            echo "✅ **Plan Status: Success**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ **Plan Status: Failed**" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Resource Changes" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Action | Count |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 🟢 Add | ${{ steps.parse-plan.outputs.to-add }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 🟡 Change | ${{ steps.parse-plan.outputs.to-change }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 🔴 Destroy | ${{ steps.parse-plan.outputs.to-destroy }} |" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -f "cost-summary.txt" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### 💰 Cost Estimation" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            cat cost-summary.txt >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "${{ inputs.upload-plan }}" == "true" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "✅ **Plan file uploaded as artifact: terraform-plan-${{ github.sha }}**" >> "$GITHUB_STEP_SUMMARY"
+          fi

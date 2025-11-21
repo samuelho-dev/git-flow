@@ -9,12 +9,12 @@ Production-grade, vetted GitHub Actions workflows for Kubernetes GitOps infrastr
 
 - **🐳 Docker**: Build, scan, sign, and push with multi-platform support
 - **🔒 Security**: Trivy, Gitleaks, SBOM generation, Cosign signing
-- **☸️  Kubernetes**: Helm lint, test, and publish to OCI registries
-- **🏗️  Infrastructure**: Terraform validation and deployment (coming soon)
-- **🧪 Testing**: Node.js/TypeScript testing with coverage (coming soon)
-- **🚀 GitOps**: ArgoCD integration and deployment automation (coming soon)
+- **☸️  Kubernetes**: Helm lint, test, publish & Kyverno policy testing
+- **🏗️  Infrastructure**: Terraform validate, plan, and apply workflows
+- **🚀 GitOps**: ArgoCD sync and automated manifest updates
 - **📦 Supply Chain**: SBOM, provenance, and vulnerability tracking
 - **🔄 Auto-Updates**: Renovate-powered SHA-pinned action updates
+- **🧪 Testing**: Node.js/TypeScript testing with coverage (coming soon)
 
 ## 📦 Available Workflows
 
@@ -40,6 +40,21 @@ Production-grade, vetted GitHub Actions workflows for Kubernetes GitOps infrastr
 | [`kubernetes/helm-test.yml`](workflows/kubernetes/helm-test.yml) | Helm unittest execution with JUnit reports | ✅ Ready |
 | [`kubernetes/helm-publish.yml`](workflows/kubernetes/helm-publish.yml) | Package & publish charts to OCI registries | ✅ Ready |
 | [`kubernetes/kyverno-test.yml`](workflows/kubernetes/kyverno-test.yml) | Kyverno policy testing with Chainsaw | ✅ Ready |
+
+### Infrastructure Workflows
+
+| Workflow | Description | Status |
+|----------|-------------|--------|
+| [`terraform/validate.yml`](workflows/terraform/validate.yml) | Terraform validation, formatting & security scanning | ✅ Ready |
+| [`terraform/plan.yml`](workflows/terraform/plan.yml) | Terraform plan with cost estimation & PR comments | ✅ Ready |
+| [`terraform/apply.yml`](workflows/terraform/apply.yml) | Terraform apply with state backup & approval gates | ✅ Ready |
+
+### GitOps Workflows
+
+| Workflow | Description | Status |
+|----------|-------------|--------|
+| [`gitops/update-manifests.yml`](workflows/gitops/update-manifests.yml) | Update Kubernetes manifests (image tags, Helm values) | ✅ Ready |
+| [`gitops/argocd-sync.yml`](workflows/gitops/argocd-sync.yml) | ArgoCD application sync with health checks | ✅ Ready |
 
 ### Composite Actions
 
