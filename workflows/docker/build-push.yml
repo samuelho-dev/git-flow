@@ -1,0 +1,234 @@
+name: 'Docker Build, Scan, Sign & Push'
+
+on:
+  workflow_call:
+    inputs:
+      context:
+        description: 'Build context path'
+        required: false
+        type: string
+        default: '.'
+      dockerfile:
+        description: 'Path to Dockerfile'
+        required: false
+        type: string
+        default: './Dockerfile'
+      image:
+        description: 'Image name (without registry/tag)'
+        required: true
+        type: string
+      registry:
+        description: 'Container registry URL'
+        required: false
+        type: string
+        default: 'ghcr.io'
+      platforms:
+        description: 'Target platforms (comma-separated)'
+        required: false
+        type: string
+        default: 'linux/amd64'
+      push:
+        description: 'Push image to registry'
+        required: false
+        type: boolean
+        default: true
+      scan:
+        description: 'Run Trivy vulnerability scan'
+        required: false
+        type: boolean
+        default: true
+      sign:
+        description: 'Sign image with Cosign (keyless OIDC)'
+        required: false
+        type: boolean
+        default: true
+      sbom:
+        description: 'Generate SBOM (Software Bill of Materials)'
+        required: false
+        type: boolean
+        default: true
+      cache-registry:
+        description: 'Use registry cache for faster builds'
+        required: false
+        type: boolean
+        default: true
+      build-args:
+        description: 'Build arguments (KEY=VALUE, one per line)'
+        required: false
+        type: string
+        default: ''
+      severity:
+        description: 'Minimum vulnerability severity to report'
+        required: false
+        type: string
+        default: 'HIGH,CRITICAL'
+    secrets:
+      registry-username:
+        description: 'Registry username'
+        required: false
+      registry-password:
+        description: 'Registry password/token'
+        required: false
+    outputs:
+      digest:
+        description: 'Image digest (sha256:...)'
+        value: ${{ jobs.build.outputs.digest }}
+      tags:
+        description: 'Image tags (newline-separated)'
+        value: ${{ jobs.build.outputs.tags }}
+      sbom-path:
+        description: 'Path to SBOM artifact'
+        value: ${{ jobs.build.outputs.sbom-path }}
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  security-events: write
+
+jobs:
+  build:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      tags: ${{ steps.meta.outputs.tags }}
+      sbom-path: ${{ steps.sbom.outputs.path }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+        with:
+          driver-opts: |
+            image=moby/buildkit:latest
+            network=host
+
+      - name: Log in to container registry
+        if: inputs.push
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.registry-username || github.actor }}
+          password: ${{ secrets.registry-password || secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@8e5442c4ef9f78752691e2d8f8d19755c6f78e81 # v5.5.1
+        with:
+          images: ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=${{ inputs.image }}
+            org.opencontainers.image.description=Built from ${{ github.repository }}
+            org.opencontainers.image.vendor=${{ github.repository_owner }}
+
+      - name: Parse build arguments
+        id: build-args
+        if: inputs.build-args != ''
+        shell: bash
+        run: |
+          echo "args<<EOF" >> $GITHUB_OUTPUT
+          echo "${{ inputs.build-args }}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          push: ${{ inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ steps.build-args.outputs.args }}
+          cache-from: ${{ inputs.cache-registry && format('type=registry,ref={0}/{1}/{2}:buildcache', inputs.registry, github.repository_owner, inputs.image) || 'type=gha' }}
+          cache-to: ${{ inputs.cache-registry && format('type=registry,ref={0}/{1}/{2}:buildcache,mode=max', inputs.registry, github.repository_owner, inputs.image) || 'type=gha,mode=max' }}
+          provenance: true
+          sbom: false
+
+      - name: Run Trivy vulnerability scanner
+        if: inputs.scan
+        uses: aquasecurity/trivy-action@5681af892cd0f4997658e5b0c1c5e7f8c7b92402 # v0.30.0
+        with:
+          image-ref: ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: ${{ inputs.severity }}
+          timeout: '10m'
+
+      - name: Upload Trivy scan results to GitHub Security
+        if: inputs.scan
+        uses: github/codeql-action/upload-sarif@48ab28a6f5dbc2a99bf1e0131198dd8f1df78169 # v3.28.0
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'container-scan'
+
+      - name: Generate SBOM
+        if: inputs.sbom
+        id: sbom
+        uses: anchore/sbom-action@7ccf588e3cf3cc2611714c2eeae48550fbc17552 # v0.17.10
+        with:
+          image: ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+          format: 'spdx-json'
+          output-file: 'sbom.spdx.json'
+          upload-artifact: true
+          upload-release-assets: false
+
+      - name: Install Cosign
+        if: inputs.sign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
+      - name: Sign image with Cosign (keyless OIDC)
+        if: inputs.sign && inputs.push
+        env:
+          COSIGN_EXPERIMENTAL: 1
+        run: |
+          cosign sign --yes \
+            ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+
+      - name: Verify signature
+        if: inputs.sign && inputs.push
+        env:
+          COSIGN_EXPERIMENTAL: 1
+        run: |
+          cosign verify \
+            --certificate-identity-regexp="${{ github.server_url }}/${{ github.repository }}.*" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+
+      - name: Generate build summary
+        shell: bash
+        run: |
+          echo "## 🐳 Docker Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Digest:** \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms:** \`${{ inputs.platforms }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Tags" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Security" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.scan }}" == "true" ]; then
+            echo "✅ Vulnerability scan: Completed" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ inputs.sign }}" == "true" ]; then
+            echo "✅ Image signature: Verified" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ inputs.sbom }}" == "true" ]; then
+            echo "✅ SBOM: Generated" >> $GITHUB_STEP_SUMMARY
+          fi

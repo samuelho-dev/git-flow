@@ -1,0 +1,130 @@
+name: 'Setup Kubernetes Tools'
+description: 'Install and configure kubectl, Helm, ArgoCD CLI, and Cosign for Kubernetes workflows'
+author: 'Samuel Ho'
+
+branding:
+  icon: 'box'
+  color: 'purple'
+
+inputs:
+  kubectl-version:
+    description: 'kubectl version to install'
+    required: false
+    default: 'v1.30.0'
+  helm-version:
+    description: 'Helm version to install'
+    required: false
+    default: 'v3.16.3'
+  argocd-version:
+    description: 'ArgoCD CLI version to install'
+    required: false
+    default: 'v2.10.20'
+  cosign-version:
+    description: 'Cosign version to install'
+    required: false
+    default: 'v2.4.1'
+  install-kubectl:
+    description: 'Whether to install kubectl'
+    required: false
+    default: 'true'
+  install-helm:
+    description: 'Whether to install Helm'
+    required: false
+    default: 'true'
+  install-argocd:
+    description: 'Whether to install ArgoCD CLI'
+    required: false
+    default: 'false'
+  install-cosign:
+    description: 'Whether to install Cosign'
+    required: false
+    default: 'false'
+
+outputs:
+  kubectl-path:
+    description: 'Path to kubectl binary'
+    value: ${{ steps.kubectl-install.outputs.path }}
+  helm-path:
+    description: 'Path to helm binary'
+    value: ${{ steps.helm-install.outputs.path }}
+  argocd-path:
+    description: 'Path to argocd binary'
+    value: ${{ steps.argocd-install.outputs.path }}
+  cosign-path:
+    description: 'Path to cosign binary'
+    value: ${{ steps.cosign-install.outputs.path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install kubectl
+      if: inputs.install-kubectl == 'true'
+      id: kubectl-install
+      shell: bash
+      run: |
+        echo "Installing kubectl ${{ inputs.kubectl-version }}..."
+        curl -LO "https://dl.k8s.io/release/${{ inputs.kubectl-version }}/bin/linux/amd64/kubectl"
+        curl -LO "https://dl.k8s.io/${{ inputs.kubectl-version }}/bin/linux/amd64/kubectl.sha256"
+        echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+        sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+        rm kubectl kubectl.sha256
+        kubectl version --client
+        echo "path=/usr/local/bin/kubectl" >> $GITHUB_OUTPUT
+
+    - name: Install Helm
+      if: inputs.install-helm == 'true'
+      id: helm-install
+      uses: azure/setup-helm@fe7b79cd5ee1e45176fcad797de68ecaf3ca4814 # v4.2.0
+      with:
+        version: ${{ inputs.helm-version }}
+
+    - name: Verify Helm installation
+      if: inputs.install-helm == 'true'
+      shell: bash
+      run: |
+        helm version
+        echo "path=$(which helm)" >> $GITHUB_OUTPUT
+
+    - name: Install ArgoCD CLI
+      if: inputs.install-argocd == 'true'
+      id: argocd-install
+      shell: bash
+      run: |
+        echo "Installing ArgoCD CLI ${{ inputs.argocd-version }}..."
+        curl -sSL -o argocd "https://github.com/argoproj/argo-cd/releases/download/${{ inputs.argocd-version }}/argocd-linux-amd64"
+        chmod +x argocd
+        sudo mv argocd /usr/local/bin/argocd
+        argocd version --client
+        echo "path=/usr/local/bin/argocd" >> $GITHUB_OUTPUT
+
+    - name: Install Cosign
+      if: inputs.install-cosign == 'true'
+      id: cosign-install
+      uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+      with:
+        cosign-release: ${{ inputs.cosign-version }}
+
+    - name: Verify Cosign installation
+      if: inputs.install-cosign == 'true'
+      shell: bash
+      run: |
+        cosign version
+        echo "path=$(which cosign)" >> $GITHUB_OUTPUT
+
+    - name: Summary
+      shell: bash
+      run: |
+        echo "## 🔧 Kubernetes Tools Installed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ inputs.install-kubectl }}" == "true" ]; then
+          echo "✅ kubectl: ${{ inputs.kubectl-version }}" >> $GITHUB_STEP_SUMMARY
+        fi
+        if [ "${{ inputs.install-helm }}" == "true" ]; then
+          echo "✅ Helm: ${{ inputs.helm-version }}" >> $GITHUB_STEP_SUMMARY
+        fi
+        if [ "${{ inputs.install-argocd }}" == "true" ]; then
+          echo "✅ ArgoCD CLI: ${{ inputs.argocd-version }}" >> $GITHUB_STEP_SUMMARY
+        fi
+        if [ "${{ inputs.install-cosign }}" == "true" ]; then
+          echo "✅ Cosign: ${{ inputs.cosign-version }}" >> $GITHUB_STEP_SUMMARY
+        fi

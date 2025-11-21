@@ -1,0 +1,151 @@
+name: 'Gitleaks Secret Scan'
+
+on:
+  workflow_call:
+    inputs:
+      scan-path:
+        description: 'Path to scan for secrets'
+        required: false
+        type: string
+        default: '.'
+      config-path:
+        description: 'Path to gitleaks config file'
+        required: false
+        type: string
+        default: ''
+      format:
+        description: 'Output format (json, sarif, csv)'
+        required: false
+        type: string
+        default: 'sarif'
+      fail-on-findings:
+        description: 'Fail workflow if secrets are found'
+        required: false
+        type: boolean
+        default: true
+      upload-sarif:
+        description: 'Upload SARIF results to GitHub Security'
+        required: false
+        type: boolean
+        default: true
+      baseline-path:
+        description: 'Path to gitleaks baseline file (ignore known findings)'
+        required: false
+        type: string
+        default: ''
+      log-level:
+        description: 'Log level (debug, info, warn, error, fatal)'
+        required: false
+        type: string
+        default: 'info'
+    outputs:
+      findings-count:
+        description: 'Number of secrets found'
+        value: ${{ jobs.scan.outputs.findings }}
+      sarif-path:
+        description: 'Path to SARIF output file'
+        value: ${{ jobs.scan.outputs.sarif-path }}
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    name: Gitleaks Secret Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      findings: ${{ steps.count.outputs.findings }}
+      sarif-path: 'gitleaks-results.sarif'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks scan
+        id: scan
+        uses: gitleaks/gitleaks-action@1f2d10fb689bc07a5f56f48d6db61f94beba84ae # v2.4.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: ${{ inputs.config-path }}
+          GITLEAKS_BASELINE: ${{ inputs.baseline-path }}
+          GITLEAKS_LOG_LEVEL: ${{ inputs.log-level }}
+        with:
+          args: >
+            --source=${{ inputs.scan-path }}
+            --report-format=${{ inputs.format }}
+            --report-path=gitleaks-results.${{ inputs.format }}
+            --log-level=${{ inputs.log-level }}
+            --redact
+            ${{ inputs.config-path != '' && format('--config={0}', inputs.config-path) || '' }}
+            ${{ inputs.baseline-path != '' && format('--baseline-path={0}', inputs.baseline-path) || '' }}
+            ${{ inputs.fail-on-findings == false && '--no-fail' || '' }}
+
+      - name: Count findings
+        id: count
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "gitleaks-results.sarif" ]; then
+            FINDINGS=$(jq '.runs[0].results | length' gitleaks-results.sarif)
+            echo "findings=$FINDINGS" >> $GITHUB_OUTPUT
+            echo "Found $FINDINGS potential secrets"
+          elif [ -f "gitleaks-results.json" ]; then
+            FINDINGS=$(jq '. | length' gitleaks-results.json)
+            echo "findings=$FINDINGS" >> $GITHUB_OUTPUT
+            echo "Found $FINDINGS potential secrets"
+          else
+            echo "findings=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload Gitleaks results to GitHub Security
+        if: inputs.upload-sarif && inputs.format == 'sarif' && always()
+        uses: github/codeql-action/upload-sarif@48ab28a6f5dbc2a99bf1e0131198dd8f1df78169 # v3.28.0
+        with:
+          sarif_file: 'gitleaks-results.sarif'
+          category: 'secret-scan'
+
+      - name: Upload scan results as artifact
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: gitleaks-results
+          path: gitleaks-results.*
+          retention-days: 30
+
+      - name: Generate scan summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## 🔐 Gitleaks Secret Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Scan Path:** \`${{ inputs.scan-path }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "gitleaks-results.sarif" ]; then
+            FINDINGS=$(jq '.runs[0].results | length' gitleaks-results.sarif)
+            if [ "$FINDINGS" -eq "0" ]; then
+              echo "✅ **No secrets detected**" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "🚨 **Found $FINDINGS potential secrets**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "Review the Security tab for detailed findings." >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### ⚠️  Action Required" >> $GITHUB_STEP_SUMMARY
+              echo "1. Rotate any exposed credentials immediately" >> $GITHUB_STEP_SUMMARY
+              echo "2. Remove secrets from git history" >> $GITHUB_STEP_SUMMARY
+              echo "3. Use environment variables or secret management" >> $GITHUB_STEP_SUMMARY
+            fi
+          elif [ -f "gitleaks-results.json" ]; then
+            FINDINGS=$(jq '. | length' gitleaks-results.json)
+            if [ "$FINDINGS" -eq "0" ]; then
+              echo "✅ **No secrets detected**" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "🚨 **Found $FINDINGS potential secrets**" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "✅ Scan completed successfully" >> $GITHUB_STEP_SUMMARY
+          fi

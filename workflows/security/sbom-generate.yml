@@ -1,0 +1,170 @@
+name: 'Generate SBOM (Software Bill of Materials)'
+
+on:
+  workflow_call:
+    inputs:
+      target-type:
+        description: 'Target type (image, directory, file)'
+        required: false
+        type: string
+        default: 'directory'
+      target:
+        description: 'Target to scan (image ref, directory path, or file path)'
+        required: false
+        type: string
+        default: '.'
+      format:
+        description: 'SBOM format (spdx-json, cyclonedx-json, syft-json)'
+        required: false
+        type: string
+        default: 'spdx-json'
+      output-file:
+        description: 'Output file name'
+        required: false
+        type: string
+        default: 'sbom.spdx.json'
+      upload-artifact:
+        description: 'Upload SBOM as workflow artifact'
+        required: false
+        type: boolean
+        default: true
+      upload-dependency-snapshot:
+        description: 'Upload to GitHub Dependency Graph (spdx-json only)'
+        required: false
+        type: boolean
+        default: true
+      scan-sbom:
+        description: 'Scan SBOM for vulnerabilities with Trivy'
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      registry-username:
+        description: 'Registry username (for private images)'
+        required: false
+      registry-password:
+        description: 'Registry password/token (for private images)'
+        required: false
+    outputs:
+      sbom-path:
+        description: 'Path to generated SBOM file'
+        value: ${{ jobs.generate.outputs.sbom-path }}
+      vulnerability-count:
+        description: 'Number of vulnerabilities found in SBOM'
+        value: ${{ jobs.generate.outputs.vulnerabilities }}
+
+permissions:
+  contents: write
+  packages: read
+  security-events: write
+
+jobs:
+  generate:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      sbom-path: ${{ inputs.output-file }}
+      vulnerabilities: ${{ steps.scan.outputs.findings }}
+
+    steps:
+      - name: Checkout repository
+        if: inputs.target-type == 'directory' || inputs.target-type == 'file'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Log in to container registry
+        if: inputs.target-type == 'image' && secrets.registry-username != ''
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ${{ contains(inputs.target, 'ghcr.io') && 'ghcr.io' || 'docker.io' }}
+          username: ${{ secrets.registry-username }}
+          password: ${{ secrets.registry-password }}
+
+      - name: Generate SBOM
+        id: sbom
+        uses: anchore/sbom-action@7ccf588e3cf3cc2611714c2eeae48550fbc17552 # v0.17.10
+        with:
+          path: ${{ inputs.target-type == 'directory' && inputs.target || '' }}
+          file: ${{ inputs.target-type == 'file' && inputs.target || '' }}
+          image: ${{ inputs.target-type == 'image' && inputs.target || '' }}
+          format: ${{ inputs.format }}
+          output-file: ${{ inputs.output-file }}
+          upload-artifact: ${{ inputs.upload-artifact }}
+          upload-release-assets: false
+          artifact-name: sbom-${{ inputs.format }}
+          dependency-snapshot: ${{ inputs.upload-dependency-snapshot && inputs.format == 'spdx-json' }}
+
+      - name: Scan SBOM for vulnerabilities
+        if: inputs.scan-sbom
+        id: scan
+        uses: aquasecurity/trivy-action@5681af892cd0f4997658e5b0c1c5e7f8c7b92402 # v0.30.0
+        with:
+          scan-type: 'sbom'
+          scan-ref: ${{ inputs.output-file }}
+          format: 'sarif'
+          output: 'trivy-sbom-results.sarif'
+          severity: 'HIGH,CRITICAL'
+          timeout: '10m'
+
+      - name: Upload SBOM scan results to GitHub Security
+        if: inputs.scan-sbom
+        uses: github/codeql-action/upload-sarif@48ab28a6f5dbc2a99bf1e0131198dd8f1df78169 # v3.28.0
+        with:
+          sarif_file: 'trivy-sbom-results.sarif'
+          category: 'sbom-scan'
+
+      - name: Count vulnerabilities
+        if: inputs.scan-sbom
+        id: count
+        shell: bash
+        run: |
+          if [ -f "trivy-sbom-results.sarif" ]; then
+            FINDINGS=$(jq '.runs[0].results | length' trivy-sbom-results.sarif)
+            echo "findings=$FINDINGS" >> $GITHUB_OUTPUT
+            echo "Found $FINDINGS vulnerabilities in SBOM"
+          else
+            echo "findings=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate SBOM summary
+        shell: bash
+        run: |
+          echo "## 📋 SBOM Generation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Target Type:** \`${{ inputs.target-type }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** \`${{ inputs.target }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Format:** \`${{ inputs.format }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Output File:** \`${{ inputs.output-file }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "${{ inputs.output-file }}" ]; then
+            echo "✅ **SBOM generated successfully**" >> $GITHUB_STEP_SUMMARY
+
+            # Count components in SBOM
+            if [ "${{ inputs.format }}" == "spdx-json" ]; then
+              COMPONENTS=$(jq '.packages | length' "${{ inputs.output-file }}")
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "📦 **Total Components:** $COMPONENTS" >> $GITHUB_STEP_SUMMARY
+            elif [ "${{ inputs.format }}" == "cyclonedx-json" ]; then
+              COMPONENTS=$(jq '.components | length' "${{ inputs.output-file }}")
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "📦 **Total Components:** $COMPONENTS" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            if [ "${{ inputs.scan-sbom }}" == "true" ] && [ -f "trivy-sbom-results.sarif" ]; then
+              VULNS=$(jq '.runs[0].results | length' trivy-sbom-results.sarif)
+              echo "" >> $GITHUB_STEP_SUMMARY
+              if [ "$VULNS" -eq "0" ]; then
+                echo "✅ **No vulnerabilities found**" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "⚠️  **Found $VULNS vulnerabilities**" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+
+            if [ "${{ inputs.upload-dependency-snapshot }}" == "true" ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "✅ **Uploaded to GitHub Dependency Graph**" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ **SBOM generation failed**" >> $GITHUB_STEP_SUMMARY
+          fi

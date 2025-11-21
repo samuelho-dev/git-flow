@@ -1,0 +1,142 @@
+name: 'Trivy Security Scan'
+
+on:
+  workflow_call:
+    inputs:
+      scan-type:
+        description: 'Type of scan (fs, image, repo, config, sbom)'
+        required: false
+        type: string
+        default: 'fs'
+      scan-ref:
+        description: 'Target to scan (path, image ref, or repo URL)'
+        required: false
+        type: string
+        default: '.'
+      severity:
+        description: 'Severity levels to report (UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL)'
+        required: false
+        type: string
+        default: 'HIGH,CRITICAL'
+      format:
+        description: 'Output format (table, json, sarif, template)'
+        required: false
+        type: string
+        default: 'sarif'
+      exit-code:
+        description: 'Exit code when vulnerabilities are found (0 or 1)'
+        required: false
+        type: string
+        default: '1'
+      upload-sarif:
+        description: 'Upload SARIF results to GitHub Security'
+        required: false
+        type: boolean
+        default: true
+      skip-files:
+        description: 'Comma-separated list of file paths to skip'
+        required: false
+        type: string
+        default: ''
+      skip-dirs:
+        description: 'Comma-separated list of directories to skip'
+        required: false
+        type: string
+        default: 'node_modules,dist,build,.git'
+      timeout:
+        description: 'Scan timeout duration'
+        required: false
+        type: string
+        default: '10m'
+    outputs:
+      findings-count:
+        description: 'Number of security findings'
+        value: ${{ jobs.scan.outputs.findings }}
+      sarif-path:
+        description: 'Path to SARIF output file'
+        value: ${{ jobs.scan.outputs.sarif-path }}
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    name: Trivy Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      findings: ${{ steps.scan.outputs.findings }}
+      sarif-path: 'trivy-results.sarif'
+
+    steps:
+      - name: Checkout repository
+        if: inputs.scan-type == 'fs' || inputs.scan-type == 'repo' || inputs.scan-type == 'config'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run Trivy scanner
+        id: scan
+        uses: aquasecurity/trivy-action@5681af892cd0f4997658e5b0c1c5e7f8c7b92402 # v0.30.0
+        with:
+          scan-type: ${{ inputs.scan-type }}
+          scan-ref: ${{ inputs.scan-ref }}
+          format: ${{ inputs.format }}
+          output: 'trivy-results.${{ inputs.format == "sarif" && "sarif" || "json" }}'
+          severity: ${{ inputs.severity }}
+          exit-code: ${{ inputs.exit-code }}
+          skip-files: ${{ inputs.skip-files }}
+          skip-dirs: ${{ inputs.skip-dirs }}
+          timeout: ${{ inputs.timeout }}
+          trivyignores: '.trivyignore'
+
+      - name: Count findings
+        id: count
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "trivy-results.sarif" ]; then
+            FINDINGS=$(jq '.runs[0].results | length' trivy-results.sarif)
+            echo "findings=$FINDINGS" >> $GITHUB_OUTPUT
+            echo "Found $FINDINGS security findings"
+          else
+            echo "findings=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload Trivy scan results to GitHub Security
+        if: inputs.upload-sarif && inputs.format == 'sarif' && always()
+        uses: github/codeql-action/upload-sarif@48ab28a6f5dbc2a99bf1e0131198dd8f1df78169 # v3.28.0
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy-${{ inputs.scan-type }}'
+
+      - name: Upload scan results as artifact
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: trivy-results-${{ inputs.scan-type }}
+          path: trivy-results.*
+          retention-days: 30
+
+      - name: Generate scan summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## 🔍 Trivy Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Scan Type:** \`${{ inputs.scan-type }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** \`${{ inputs.scan-ref }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Severity:** \`${{ inputs.severity }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "trivy-results.sarif" ]; then
+            FINDINGS=$(jq '.runs[0].results | length' trivy-results.sarif)
+            if [ "$FINDINGS" -eq "0" ]; then
+              echo "✅ **No vulnerabilities found**" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️  **Found $FINDINGS security findings**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "Review the Security tab for detailed findings." >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "ℹ️  Scan completed (non-SARIF format)" >> $GITHUB_STEP_SUMMARY
+          fi
