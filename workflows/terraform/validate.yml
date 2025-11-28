@@ -1,56 +1,56 @@
-name: 'Terraform Validate'
+name: "Terraform Validate"
 
 on:
   workflow_call:
     inputs:
       terraform-path:
-        description: 'Path to Terraform directory'
+        description: "Path to Terraform directory"
         required: true
         type: string
       terraform-version:
-        description: 'Terraform version'
+        description: "Terraform version"
         required: false
         type: string
-        default: '1.9.8'
+        default: "1.9.8"
       format-check:
-        description: 'Check Terraform formatting'
+        description: "Check Terraform formatting"
         required: false
         type: boolean
         default: true
       tfsec-scan:
-        description: 'Run tfsec security scan'
+        description: "Run tfsec security scan"
         required: false
         type: boolean
         default: true
       checkov-scan:
-        description: 'Run Checkov compliance scan'
+        description: "Run Checkov compliance scan"
         required: false
         type: boolean
         default: true
       terraform-docs-check:
-        description: 'Check if README.md is up to date'
+        description: "Check if README.md is up to date"
         required: false
         type: boolean
         default: false
       upload-sarif:
-        description: 'Upload security scan results to GitHub Security'
+        description: "Upload security scan results to GitHub Security"
         required: false
         type: boolean
         default: true
       working-directory:
-        description: 'Working directory for commands'
+        description: "Working directory for commands"
         required: false
         type: string
-        default: '.'
+        default: "."
     outputs:
       validation-result:
-        description: 'Validation result (success/failure)'
+        description: "Validation result (success/failure)"
         value: ${{ jobs.validate.outputs.result }}
       format-result:
-        description: 'Format check result'
+        description: "Format check result"
         value: ${{ jobs.validate.outputs.format-result }}
       security-findings:
-        description: 'Number of security findings'
+        description: "Number of security findings"
         value: ${{ jobs.validate.outputs.findings }}
 
 permissions:
@@ -153,14 +153,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@48ab28a6f5dbc2a99bf1e0131198dd8f1df78169 # v3.28.0
         with:
           sarif_file: ${{ inputs.working-directory }}/${{ inputs.terraform-path }}/tfsec-results.sarif
-          category: 'tfsec'
-
-      - name: Upload Checkov results to GitHub Security
-        if: inputs.checkov-scan && inputs.upload-sarif
-        uses: github/codeql-action/upload-sarif@48ab28a6f5dbc2a99bf1e0131198dd8f1df78169 # v3.28.0
-        with:
-          sarif_file: ${{ inputs.working-directory }}/${{ inputs.terraform-path }}/results_sarif.sarif
-          category: 'checkov'
+          category: "tfsec"
 
       - name: Count security findings
         if: always()
