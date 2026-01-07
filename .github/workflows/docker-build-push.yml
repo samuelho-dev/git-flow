@@ -90,6 +90,7 @@ permissions:
   packages: write
   id-token: write
   security-events: write
+  actions: write  # Required for artifact upload in SBOM generation
 
 jobs:
   build:
@@ -200,7 +201,7 @@ jobs:
           image: ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
           format: 'spdx-json'
           output-file: 'sbom.spdx.json'
-          artifact-name: ${{ inputs.image }}-sbom.spdx.json
+          artifact-name: sbom-${{ inputs.image }}
           upload-artifact: true
           upload-release-assets: false
 
