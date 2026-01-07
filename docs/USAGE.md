@@ -45,7 +45,7 @@ on:
 
 jobs:
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/docker-build-push.yml@v1
     with:
       image: my-app
     secrets: inherit
@@ -55,7 +55,7 @@ jobs:
 
 ## Docker Workflows
 
-### `docker/build-push.yml`
+### `docker-build-push.yml`
 
 Build, scan, sign, and push Docker images with comprehensive security features.
 
@@ -110,7 +110,7 @@ permissions:
 jobs:
   build-backend:
     name: Build Backend Image
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/docker-build-push.yml@v1
     with:
       context: .
       dockerfile: ./docker/backend/Dockerfile
@@ -131,7 +131,7 @@ jobs:
 
   build-frontend:
     name: Build Frontend Image
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/docker-build-push.yml@v1
     with:
       dockerfile: ./docker/frontend/Dockerfile
       image: my-app-frontend
@@ -176,7 +176,7 @@ sbom: false  # Skip SBOM generation
 
 ## Security Workflows
 
-### `security/trivy-scan.yml`
+### `trivy-scan.yml`
 
 Comprehensive vulnerability scanning for filesystems, images, repositories, and configurations.
 
@@ -200,7 +200,7 @@ Comprehensive vulnerability scanning for filesystems, images, repositories, and 
 ```yaml
 jobs:
   scan-code:
-    uses: samuelho-dev/git-flow/.github/workflows/security/trivy-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/trivy-scan.yml@v1
     with:
       scan-type: fs
       scan-ref: .
@@ -212,7 +212,7 @@ jobs:
 ```yaml
 jobs:
   scan-image:
-    uses: samuelho-dev/git-flow/.github/workflows/security/trivy-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/trivy-scan.yml@v1
     with:
       scan-type: image
       scan-ref: ghcr.io/samuelho-dev/my-app:latest
@@ -223,7 +223,7 @@ jobs:
 ```yaml
 jobs:
   scan-k8s:
-    uses: samuelho-dev/git-flow/.github/workflows/security/trivy-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/trivy-scan.yml@v1
     with:
       scan-type: config
       scan-ref: deploy/kubernetes/
@@ -232,7 +232,7 @@ jobs:
 
 ---
 
-### `security/gitleaks-scan.yml`
+### `gitleaks-scan.yml`
 
 Secret detection and prevention with 160+ secret patterns.
 
@@ -254,7 +254,7 @@ Secret detection and prevention with 160+ secret patterns.
 ```yaml
 jobs:
   scan-secrets:
-    uses: samuelho-dev/git-flow/.github/workflows/security/gitleaks-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/gitleaks-scan.yml@v1
     with:
       fail-on-findings: true
 ```
@@ -263,7 +263,7 @@ jobs:
 ```yaml
 jobs:
   scan-secrets:
-    uses: samuelho-dev/git-flow/.github/workflows/security/gitleaks-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/gitleaks-scan.yml@v1
     with:
       config-path: .gitleaks.toml
       baseline-path: .gitleaks-baseline.json
@@ -274,7 +274,7 @@ jobs:
 ```yaml
 jobs:
   scan-src:
-    uses: samuelho-dev/git-flow/.github/workflows/security/gitleaks-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/gitleaks-scan.yml@v1
     with:
       scan-path: src/
       fail-on-findings: false  # Report only
@@ -282,7 +282,7 @@ jobs:
 
 ---
 
-### `security/sbom-generate.yml`
+### `sbom-generate.yml`
 
 Generate Software Bill of Materials (SBOM) for supply chain security.
 
@@ -304,7 +304,7 @@ Generate Software Bill of Materials (SBOM) for supply chain security.
 ```yaml
 jobs:
   sbom:
-    uses: samuelho-dev/git-flow/.github/workflows/security/sbom-generate.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/sbom-generate.yml@v1
     with:
       target-type: directory
       target: .
@@ -315,7 +315,7 @@ jobs:
 ```yaml
 jobs:
   sbom:
-    uses: samuelho-dev/git-flow/.github/workflows/security/sbom-generate.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/sbom-generate.yml@v1
     with:
       target-type: image
       target: ghcr.io/samuelho-dev/my-app:latest
@@ -326,7 +326,7 @@ jobs:
 ```yaml
 jobs:
   sbom:
-    uses: samuelho-dev/git-flow/.github/workflows/security/sbom-generate.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/sbom-generate.yml@v1
     with:
       format: cyclonedx-json
       output-file: sbom.cdx.json
@@ -336,7 +336,7 @@ jobs:
 
 ## Kubernetes Workflows
 
-### `kubernetes/helm-lint.yml`
+### `helm-lint.yml`
 
 Lint and validate Helm charts with kubeconform and helm-docs verification.
 
@@ -366,7 +366,7 @@ Lint and validate Helm charts with kubeconform and helm-docs verification.
 ```yaml
 jobs:
   lint:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-lint.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/helm-lint.yml@v1
     with:
       chart-path: charts/my-app
 ```
@@ -375,7 +375,7 @@ jobs:
 ```yaml
 jobs:
   lint:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-lint.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/helm-lint.yml@v1
     with:
       chart-path: charts/my-app
       schema-validation: true
@@ -386,7 +386,7 @@ jobs:
 ```yaml
 jobs:
   lint:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-lint.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/helm-lint.yml@v1
     with:
       chart-path: charts/my-app
       kubeconform: false
@@ -395,7 +395,7 @@ jobs:
 
 ---
 
-### `kubernetes/helm-test.yml`
+### `helm-test.yml`
 
 Run Helm unittest tests for chart validation.
 
@@ -426,7 +426,7 @@ Run Helm unittest tests for chart validation.
 ```yaml
 jobs:
   test:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-test.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/helm-test.yml@v1
     with:
       chart-path: charts/my-app
 ```
@@ -435,7 +435,7 @@ jobs:
 ```yaml
 jobs:
   test:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-test.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/helm-test.yml@v1
     with:
       chart-path: charts/my-app
       update-snapshots: true
@@ -446,7 +446,7 @@ jobs:
 ```yaml
 jobs:
   test:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-test.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/helm-test.yml@v1
     with:
       chart-path: charts/my-app
       test-pattern: tests/**/*_test.yaml
@@ -455,7 +455,7 @@ jobs:
 
 ---
 
-### `kubernetes/helm-publish.yml`
+### `helm-publish.yml`
 
 Package and publish Helm charts to OCI registries with signing.
 
@@ -495,7 +495,7 @@ Package and publish Helm charts to OCI registries with signing.
 ```yaml
 jobs:
   publish:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-publish.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/helm-publish.yml@v1
     with:
       chart-path: charts/my-app
     secrets: inherit
@@ -505,7 +505,7 @@ jobs:
 ```yaml
 jobs:
   publish:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-publish.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/helm-publish.yml@v1
     with:
       chart-path: charts/my-app
       multi-registry: docker.io,quay.io
@@ -517,7 +517,7 @@ jobs:
 ```yaml
 jobs:
   publish:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-publish.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/helm-publish.yml@v1
     with:
       chart-path: charts/my-app
       create-release: false
@@ -526,7 +526,7 @@ jobs:
 
 ---
 
-### `kubernetes/kyverno-test.yml`
+### `kyverno-test.yml`
 
 Test Kyverno policies using Kyverno CLI and Chainsaw framework.
 
@@ -558,7 +558,7 @@ Test Kyverno policies using Kyverno CLI and Chainsaw framework.
 ```yaml
 jobs:
   test:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/kyverno-test.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/kyverno-test.yml@v1
     with:
       policy-path: policies/
 ```
@@ -567,7 +567,7 @@ jobs:
 ```yaml
 jobs:
   test:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/kyverno-test.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/kyverno-test.yml@v1
     with:
       policy-path: policies/
       test-path: tests/chainsaw
@@ -579,7 +579,7 @@ jobs:
 ```yaml
 jobs:
   test:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/kyverno-test.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/kyverno-test.yml@v1
     with:
       policy-path: policies/
       kyverno-version: v1.13.0
@@ -591,7 +591,7 @@ jobs:
 
 ## Infrastructure Workflows
 
-### `terraform/validate.yml`
+### `terraform-validate.yml`
 
 Validate Terraform configuration with formatting checks and security scanning.
 
@@ -622,7 +622,7 @@ Validate Terraform configuration with formatting checks and security scanning.
 ```yaml
 jobs:
   validate:
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/validate.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/terraform-validate.yml@v1
     with:
       terraform-path: terraform/environments/prod
 ```
@@ -631,7 +631,7 @@ jobs:
 ```yaml
 jobs:
   validate:
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/validate.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/terraform-validate.yml@v1
     with:
       terraform-path: terraform/environments/prod
       format-check: true
@@ -642,7 +642,7 @@ jobs:
 
 ---
 
-### `terraform/plan.yml`
+### `terraform-plan.yml`
 
 Generate Terraform plan with cost estimation and PR comments.
 
@@ -683,7 +683,7 @@ Generate Terraform plan with cost estimation and PR comments.
 ```yaml
 jobs:
   plan:
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/terraform-plan.yml@v1
     with:
       terraform-path: terraform/environments/prod
     secrets: inherit
@@ -693,7 +693,7 @@ jobs:
 ```yaml
 jobs:
   plan:
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/terraform-plan.yml@v1
     with:
       terraform-path: terraform/environments/prod
       cost-estimation: true
@@ -707,7 +707,7 @@ jobs:
 ```yaml
 jobs:
   plan:
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/terraform-plan.yml@v1
     with:
       terraform-path: terraform/aws
       comment-pr: true
@@ -718,7 +718,7 @@ jobs:
 
 ---
 
-### `terraform/apply.yml`
+### `terraform-apply.yml`
 
 Apply Terraform changes with state backup and approval gates.
 
@@ -756,13 +756,13 @@ Apply Terraform changes with state backup and approval gates.
 ```yaml
 jobs:
   plan:
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/terraform-plan.yml@v1
     with:
       terraform-path: terraform/environments/prod
 
   apply:
     needs: plan
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/terraform-apply.yml@v1
     with:
       terraform-path: terraform/environments/prod
       plan-artifact-name: terraform-plan-${{ github.sha }}
@@ -774,7 +774,7 @@ jobs:
 ```yaml
 jobs:
   apply:
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/terraform-apply.yml@v1
     with:
       terraform-path: terraform/environments/prod
       environment: production  # Requires GitHub Environment approval
@@ -786,7 +786,7 @@ jobs:
 
 ## GitOps Workflows
 
-### `gitops/update-manifests.yml`
+### `gitops-update-manifests.yml`
 
 Update Kubernetes manifests with new image tags or Helm values.
 
@@ -820,7 +820,7 @@ Update Kubernetes manifests with new image tags or Helm values.
 ```yaml
 jobs:
   update:
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/gitops-update-manifests.yml@v1
     with:
       manifest-path: k8s/apps/my-app
       update-type: image
@@ -832,7 +832,7 @@ jobs:
 ```yaml
 jobs:
   update:
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/gitops-update-manifests.yml@v1
     with:
       manifest-path: k8s/apps/my-app
       update-type: image
@@ -846,7 +846,7 @@ jobs:
 ```yaml
 jobs:
   update:
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/gitops-update-manifests.yml@v1
     with:
       manifest-path: helm/my-app
       update-type: helm-values
@@ -857,7 +857,7 @@ jobs:
 
 ---
 
-### `gitops/argocd-sync.yml`
+### `argocd-sync.yml`
 
 Trigger ArgoCD application sync with health verification.
 
@@ -898,7 +898,7 @@ Trigger ArgoCD application sync with health verification.
 ```yaml
 jobs:
   sync:
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/argocd-sync.yml@v1
     with:
       argocd-server: argocd.example.com
       argocd-app-name: my-app
@@ -910,7 +910,7 @@ jobs:
 ```yaml
 jobs:
   sync:
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/argocd-sync.yml@v1
     with:
       argocd-server: argocd.example.com
       argocd-app-name: my-app
@@ -926,7 +926,7 @@ jobs:
 ```yaml
 jobs:
   sync-test:
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/argocd-sync.yml@v1
     with:
       argocd-server: argocd.example.com
       argocd-app-name: my-app
@@ -1032,17 +1032,17 @@ jobs:
 
 **Use major version tags for auto-updates:**
 ```yaml
-uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+uses: samuelho-dev/git-flow/.github/workflows/docker-build-push.yml@v1
 ```
 
 **Pin to specific version for stability:**
 ```yaml
-uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1.0.0
+uses: samuelho-dev/git-flow/.github/workflows/docker-build-push.yml@v1.0.0
 ```
 
 **Use commit SHA for maximum security:**
 ```yaml
-uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@abc123def456
+uses: samuelho-dev/git-flow/.github/workflows/docker-build-push.yml@abc123def456
 ```
 
 ### 2. Secret Management
@@ -1057,7 +1057,7 @@ secrets:
 ```yaml
 jobs:
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/docker-build-push.yml@v1
     secrets: inherit  # Pass all secrets
 ```
 

@@ -43,13 +43,13 @@ jobs:
   # Stage 1: Security Scans
   scan-secrets:
     name: Scan for Secrets
-    uses: samuelho-dev/git-flow/.github/workflows/security/gitleaks-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitleaks-scan.yml@v1
     with:
       fail-on-findings: true
 
   scan-vulnerabilities:
     name: Scan for Vulnerabilities
-    uses: samuelho-dev/git-flow/.github/workflows/security/trivy-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/trivy-scan.yml@v1
     with:
       scan-type: fs
       scan-ref: .
@@ -59,7 +59,7 @@ jobs:
   build:
     name: Build Docker Image
     needs: [scan-secrets, scan-vulnerabilities]
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       context: .
       dockerfile: ./Dockerfile
@@ -76,7 +76,7 @@ jobs:
     name: Generate SBOM
     needs: build
     if: github.ref == 'refs/heads/main'
-    uses: samuelho-dev/git-flow/.github/workflows/security/sbom-generate.yml@v1
+    uses: samuelho-dev/git-flow/.github/sbom-generate.yml@v1
     with:
       target-type: image
       target: ghcr.io/${{ github.repository_owner }}/my-app:sha-${{ github.sha }}
@@ -118,20 +118,20 @@ jobs:
   # Security scans run once for entire repo
   security:
     name: Security Scans
-    uses: samuelho-dev/git-flow/.github/workflows/security/trivy-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/trivy-scan.yml@v1
     with:
       scan-type: fs
       scan-ref: .
 
   secrets:
     name: Secret Scan
-    uses: samuelho-dev/git-flow/.github/workflows/security/gitleaks-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitleaks-scan.yml@v1
 
   # Build backend service
   build-backend:
     name: Build Backend
     needs: [security, secrets]
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       context: .
       dockerfile: ./services/backend/Dockerfile
@@ -145,7 +145,7 @@ jobs:
   build-frontend:
     name: Build Frontend
     needs: [security, secrets]
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       context: .
       dockerfile: ./services/frontend/Dockerfile
@@ -159,7 +159,7 @@ jobs:
   build-worker:
     name: Build Worker
     needs: [security, secrets]
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       context: .
       dockerfile: ./services/worker/Dockerfile
@@ -206,7 +206,7 @@ jobs:
   # Scan 1: Secrets
   gitleaks:
     name: Secret Detection
-    uses: samuelho-dev/git-flow/.github/workflows/security/gitleaks-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitleaks-scan.yml@v1
     with:
       fail-on-findings: true
       format: sarif
@@ -214,7 +214,7 @@ jobs:
   # Scan 2: Filesystem Vulnerabilities
   trivy-fs:
     name: Filesystem Scan
-    uses: samuelho-dev/git-flow/.github/workflows/security/trivy-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/trivy-scan.yml@v1
     with:
       scan-type: fs
       scan-ref: .
@@ -223,7 +223,7 @@ jobs:
   # Scan 3: Configuration Issues
   trivy-config:
     name: Configuration Scan
-    uses: samuelho-dev/git-flow/.github/workflows/security/trivy-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/trivy-scan.yml@v1
     with:
       scan-type: config
       scan-ref: deploy/
@@ -233,7 +233,7 @@ jobs:
   trivy-image:
     name: Image Scan
     needs: trivy-fs
-    uses: samuelho-dev/git-flow/.github/workflows/security/trivy-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/trivy-scan.yml@v1
     with:
       scan-type: image
       scan-ref: ghcr.io/${{ github.repository_owner }}/my-app:latest
@@ -242,7 +242,7 @@ jobs:
   # Scan 5: SBOM Analysis
   sbom-scan:
     name: SBOM Vulnerability Scan
-    uses: samuelho-dev/git-flow/.github/workflows/security/sbom-generate.yml@v1
+    uses: samuelho-dev/git-flow/.github/sbom-generate.yml@v1
     with:
       target-type: directory
       target: .
@@ -286,7 +286,7 @@ permissions:
 jobs:
   build:
     name: Build Multi-Platform Image
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       context: .
       dockerfile: ./Dockerfile
@@ -353,7 +353,7 @@ jobs:
   # Fast security checks
   security:
     name: Security Checks
-    uses: samuelho-dev/git-flow/.github/workflows/security/gitleaks-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitleaks-scan.yml@v1
     with:
       fail-on-findings: true
 
@@ -361,7 +361,7 @@ jobs:
   build:
     name: Build & Test
     needs: security
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app
       push: false  # Don't push on PR
@@ -414,7 +414,7 @@ permissions:
 jobs:
   scan-repo:
     name: Repository Scan
-    uses: samuelho-dev/git-flow/.github/workflows/security/trivy-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/trivy-scan.yml@v1
     with:
       scan-type: fs
       scan-ref: .
@@ -422,7 +422,7 @@ jobs:
 
   scan-secrets:
     name: Secret Scan
-    uses: samuelho-dev/git-flow/.github/workflows/security/gitleaks-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitleaks-scan.yml@v1
     with:
       fail-on-findings: false  # Report only
 
@@ -434,7 +434,7 @@ jobs:
           - my-app-backend
           - my-app-frontend
           - my-app-worker
-    uses: samuelho-dev/git-flow/.github/workflows/security/trivy-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/trivy-scan.yml@v1
     with:
       scan-type: image
       scan-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
@@ -442,7 +442,7 @@ jobs:
 
   sbom-check:
     name: SBOM Vulnerability Check
-    uses: samuelho-dev/git-flow/.github/workflows/security/sbom-generate.yml@v1
+    uses: samuelho-dev/git-flow/.github/sbom-generate.yml@v1
     with:
       target-type: directory
       target: .
@@ -522,7 +522,7 @@ jobs:
 
       # Use reusable workflow for security scan
       - name: Scan image
-        uses: samuelho-dev/git-flow/.github/workflows/security/trivy-scan.yml@v1
+        uses: samuelho-dev/git-flow/.github/trivy-scan.yml@v1
         with:
           scan-type: image
           scan-ref: ghcr.io/${{ github.repository_owner }}/my-app:${{ github.sha }}
@@ -556,7 +556,7 @@ jobs:
   # Stage 1: Lint
   lint:
     name: Lint Helm Chart
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-lint.yml@v1
+    uses: samuelho-dev/git-flow/.github/helm-lint.yml@v1
     with:
       chart-path: charts/my-app
       strict: true
@@ -569,7 +569,7 @@ jobs:
   test:
     name: Test Helm Chart
     needs: lint
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-test.yml@v1
+    uses: samuelho-dev/git-flow/.github/helm-test.yml@v1
     with:
       chart-path: charts/my-app
       output-format: junit
@@ -580,7 +580,7 @@ jobs:
     name: Publish Helm Chart
     needs: [lint, test]
     if: github.ref == 'refs/heads/main'
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-publish.yml@v1
+    uses: samuelho-dev/git-flow/.github/helm-publish.yml@v1
     with:
       chart-path: charts/my-app
       registry: ghcr.io
@@ -645,7 +645,7 @@ jobs:
       matrix:
         chart: ${{ fromJson(needs.find-charts.outputs.charts) }}
       fail-fast: false
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-lint.yml@v1
+    uses: samuelho-dev/git-flow/.github/helm-lint.yml@v1
     with:
       chart-path: charts/${{ matrix.chart }}
 
@@ -657,7 +657,7 @@ jobs:
       matrix:
         chart: ${{ fromJson(needs.find-charts.outputs.charts) }}
       fail-fast: false
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-test.yml@v1
+    uses: samuelho-dev/git-flow/.github/helm-test.yml@v1
     with:
       chart-path: charts/${{ matrix.chart }}
 
@@ -669,7 +669,7 @@ jobs:
     strategy:
       matrix:
         chart: ${{ fromJson(needs.find-charts.outputs.charts) }}
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-publish.yml@v1
+    uses: samuelho-dev/git-flow/.github/helm-publish.yml@v1
     with:
       chart-path: charts/${{ matrix.chart }}
     secrets: inherit
@@ -701,7 +701,7 @@ jobs:
   # Validate and test policies
   test-policies:
     name: Test Kyverno Policies
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/kyverno-test.yml@v1
+    uses: samuelho-dev/git-flow/.github/kyverno-test.yml@v1
     with:
       policy-path: policies/
       test-path: tests/chainsaw
@@ -770,7 +770,7 @@ jobs:
   # Run full test suite with Chainsaw
   test-chainsaw:
     name: Chainsaw Integration Tests
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/kyverno-test.yml@v1
+    uses: samuelho-dev/git-flow/.github/kyverno-test.yml@v1
     with:
       policy-path: policies/
       test-framework: chainsaw
@@ -809,7 +809,7 @@ jobs:
   # Stage 1: Validate
   validate:
     name: Validate Terraform
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/validate.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-validate.yml@v1
     with:
       terraform-path: terraform/environments/prod
       terraform-version: 1.9.8
@@ -824,7 +824,7 @@ jobs:
   plan:
     name: Plan Infrastructure Changes
     needs: validate
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-plan.yml@v1
     with:
       terraform-path: terraform/environments/prod
       terraform-version: 1.9.8
@@ -842,7 +842,7 @@ jobs:
     name: Apply Infrastructure Changes
     needs: plan
     if: github.ref == 'refs/heads/main'
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-apply.yml@v1
     with:
       terraform-path: terraform/environments/prod
       terraform-version: 1.9.8
@@ -923,7 +923,7 @@ jobs:
       matrix:
         env: [dev, staging, production]
       fail-fast: false
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/validate.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-validate.yml@v1
     with:
       terraform-path: terraform/environments/${{ matrix.env }}
       tfsec-scan: true
@@ -938,7 +938,7 @@ jobs:
     strategy:
       matrix:
         env: ${{ fromJson(needs.select-environment.outputs.environments) }}
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-plan.yml@v1
     with:
       terraform-path: terraform/environments/${{ matrix.env }}
       upload-plan: true
@@ -954,7 +954,7 @@ jobs:
     name: Apply to Dev
     needs: plan
     if: contains(fromJson(needs.select-environment.outputs.environments), 'dev')
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-apply.yml@v1
     with:
       terraform-path: terraform/environments/dev
       plan-artifact-name: terraform-plan-${{ github.sha }}
@@ -972,7 +972,7 @@ jobs:
       !cancelled() &&
       (needs.apply-dev.result == 'success' || needs.apply-dev.result == 'skipped') &&
       contains(fromJson(needs.select-environment.outputs.environments), 'staging')
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-apply.yml@v1
     with:
       terraform-path: terraform/environments/staging
       plan-artifact-name: terraform-plan-${{ github.sha }}
@@ -990,7 +990,7 @@ jobs:
       !cancelled() &&
       (needs.apply-staging.result == 'success' || needs.apply-staging.result == 'skipped') &&
       contains(fromJson(needs.select-environment.outputs.environments), 'production')
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-apply.yml@v1
     with:
       terraform-path: terraform/environments/production
       plan-artifact-name: terraform-plan-${{ github.sha }}
@@ -1026,7 +1026,7 @@ jobs:
   # Security validation
   validate:
     name: Security Validation
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/validate.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-validate.yml@v1
     with:
       terraform-path: terraform/
       terraform-version: 1.9.8
@@ -1042,7 +1042,7 @@ jobs:
   # Additional secret scanning
   scan-secrets:
     name: Scan for Secrets
-    uses: samuelho-dev/git-flow/.github/workflows/security/gitleaks-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitleaks-scan.yml@v1
     with:
       fail-on-findings: true
       format: sarif
@@ -1051,7 +1051,7 @@ jobs:
   plan-with-cost:
     name: Plan with Cost Estimation
     needs: [validate, scan-secrets]
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-plan.yml@v1
     with:
       terraform-path: terraform/
       enable-infracost: true
@@ -1068,7 +1068,7 @@ jobs:
     name: Apply Infrastructure
     needs: plan-with-cost
     if: github.ref == 'refs/heads/main'
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-apply.yml@v1
     with:
       terraform-path: terraform/
       plan-artifact-name: terraform-plan-${{ github.sha }}
@@ -1127,7 +1127,7 @@ jobs:
   # Stage 1: Build and push Docker image
   build:
     name: Build & Push Image
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       context: .
       dockerfile: ./Dockerfile
@@ -1143,7 +1143,7 @@ jobs:
   update-manifests:
     name: Update Manifests
     needs: build
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitops-update-manifests.yml@v1
     with:
       manifest-path: deploy/k8s/overlays/production
       update-type: image
@@ -1163,7 +1163,7 @@ jobs:
   argocd-sync:
     name: Sync ArgoCD
     needs: update-manifests
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    uses: samuelho-dev/git-flow/.github/argocd-sync.yml@v1
     with:
       argocd-server: argocd.example.com
       argocd-app-name: my-app-production
@@ -1221,7 +1221,7 @@ jobs:
   # Build image
   build:
     name: Build Image
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app
       push: true
@@ -1232,7 +1232,7 @@ jobs:
   update-manifests:
     name: Update Manifests via PR
     needs: build
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitops-update-manifests.yml@v1
     with:
       manifest-path: deploy/k8s/production
       update-type: image
@@ -1298,7 +1298,7 @@ permissions:
 jobs:
   # Build all services
   build-backend:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app-backend
       dockerfile: ./services/backend/Dockerfile
@@ -1306,7 +1306,7 @@ jobs:
     secrets: inherit
 
   build-frontend:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app-frontend
       dockerfile: ./services/frontend/Dockerfile
@@ -1314,7 +1314,7 @@ jobs:
     secrets: inherit
 
   build-worker:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app-worker
       dockerfile: ./services/worker/Dockerfile
@@ -1324,7 +1324,7 @@ jobs:
   # Update manifests for all services
   update-backend:
     needs: build-backend
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitops-update-manifests.yml@v1
     with:
       manifest-path: deploy/k8s/backend
       update-type: image
@@ -1333,7 +1333,7 @@ jobs:
 
   update-frontend:
     needs: build-frontend
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitops-update-manifests.yml@v1
     with:
       manifest-path: deploy/k8s/frontend
       update-type: image
@@ -1342,7 +1342,7 @@ jobs:
 
   update-worker:
     needs: build-worker
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitops-update-manifests.yml@v1
     with:
       manifest-path: deploy/k8s/worker
       update-type: image
@@ -1352,7 +1352,7 @@ jobs:
   # Sync all ArgoCD applications
   sync-backend:
     needs: update-backend
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    uses: samuelho-dev/git-flow/.github/argocd-sync.yml@v1
     with:
       argocd-server: argocd.example.com
       argocd-app-name: my-app-backend
@@ -1362,7 +1362,7 @@ jobs:
 
   sync-frontend:
     needs: update-frontend
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    uses: samuelho-dev/git-flow/.github/argocd-sync.yml@v1
     with:
       argocd-server: argocd.example.com
       argocd-app-name: my-app-frontend
@@ -1372,7 +1372,7 @@ jobs:
 
   sync-worker:
     needs: update-worker
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    uses: samuelho-dev/git-flow/.github/argocd-sync.yml@v1
     with:
       argocd-server: argocd.example.com
       argocd-app-name: my-app-worker
@@ -1430,7 +1430,7 @@ permissions:
 jobs:
   update-helm-values:
     name: Update Helm Values
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitops-update-manifests.yml@v1
     with:
       manifest-path: deploy/helm/my-app/environments/${{ inputs.environment }}
       update-type: helm-values
@@ -1448,7 +1448,7 @@ jobs:
     name: Sync ArgoCD (after PR merge)
     needs: update-helm-values
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    uses: samuelho-dev/git-flow/.github/argocd-sync.yml@v1
     with:
       argocd-server: argocd.example.com
       argocd-app-name: my-app-${{ inputs.environment }}

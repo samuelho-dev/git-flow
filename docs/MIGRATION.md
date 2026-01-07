@@ -122,7 +122,7 @@ on:
 
 jobs:
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app
       push: true
@@ -198,7 +198,7 @@ on:
 
 jobs:
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app
       push: true
@@ -268,7 +268,7 @@ on:
 
 jobs:
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app
       platforms: linux/amd64,linux/arm64,linux/arm/v7
@@ -330,7 +330,7 @@ on:
 
 jobs:
   scan:
-    uses: samuelho-dev/git-flow/.github/workflows/security/trivy-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/trivy-scan.yml@v1
     with:
       scan-type: fs
       scan-ref: .
@@ -378,7 +378,7 @@ on:
 
 jobs:
   scan:
-    uses: samuelho-dev/git-flow/.github/workflows/security/gitleaks-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitleaks-scan.yml@v1
     with:
       fail-on-findings: true
 ```
@@ -435,7 +435,7 @@ on:
 
 jobs:
   sbom:
-    uses: samuelho-dev/git-flow/.github/workflows/security/sbom-generate.yml@v1
+    uses: samuelho-dev/git-flow/.github/sbom-generate.yml@v1
     with:
       target-type: directory
       target: .
@@ -499,7 +499,7 @@ on:
 
 jobs:
   lint:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-lint.yml@v1
+    uses: samuelho-dev/git-flow/.github/helm-lint.yml@v1
     with:
       chart-path: charts/my-app
       kubeconform: true
@@ -553,7 +553,7 @@ on:
 
 jobs:
   test:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-test.yml@v1
+    uses: samuelho-dev/git-flow/.github/helm-test.yml@v1
     with:
       chart-path: charts/my-app
       output-format: junit
@@ -611,7 +611,7 @@ on:
 
 jobs:
   publish:
-    uses: samuelho-dev/git-flow/.github/workflows/kubernetes/helm-publish.yml@v1
+    uses: samuelho-dev/git-flow/.github/helm-publish.yml@v1
     with:
       chart-path: charts/my-app
       registry: ghcr.io
@@ -677,7 +677,7 @@ on:
 
 jobs:
   validate:
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/validate.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-validate.yml@v1
     with:
       terraform-path: terraform/
       terraform-version: 1.9.8
@@ -749,7 +749,7 @@ on:
 
 jobs:
   plan:
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-plan.yml@v1
     with:
       terraform-path: terraform/
       terraform-version: 1.9.8
@@ -827,7 +827,7 @@ on:
 
 jobs:
   apply:
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-apply.yml@v1
     with:
       terraform-path: terraform/
       terraform-version: 1.9.8
@@ -873,7 +873,7 @@ on:
 jobs:
   # Build image
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app
       push: true
@@ -882,7 +882,7 @@ jobs:
   # Update manifests automatically
   update-manifests:
     needs: build
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitops-update-manifests.yml@v1
     with:
       manifest-path: deploy/k8s/production
       update-type: image
@@ -892,7 +892,7 @@ jobs:
   # Sync ArgoCD automatically
   argocd-sync:
     needs: update-manifests
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/argocd-sync.yml@v1
+    uses: samuelho-dev/git-flow/.github/argocd-sync.yml@v1
     with:
       argocd-server: argocd.example.com
       argocd-app-name: my-app-production
@@ -941,7 +941,7 @@ on:
 
 jobs:
   update:
-    uses: samuelho-dev/git-flow/.github/workflows/gitops/update-manifests.yml@v1
+    uses: samuelho-dev/git-flow/.github/gitops-update-manifests.yml@v1
     with:
       manifest-path: deploy/helm/environments/${{ inputs.environment }}
       update-type: helm-values
@@ -982,7 +982,7 @@ jobs:
   # New reusable workflow
   build-new:
     name: Build (New - Testing)
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app
       push: true
@@ -1029,7 +1029,7 @@ jobs:
   build-reusable:
     name: Build (Reusable)
     if: github.event_name == 'workflow_dispatch' && inputs.use-reusable-workflow
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app
     secrets: inherit
@@ -1049,7 +1049,7 @@ on:
 jobs:
   # ✅ Migrated: Using reusable workflow
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app
     secrets: inherit
@@ -1077,7 +1077,7 @@ jobs:
 
 **Symptom:**
 ```
-Error: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1 not found
+Error: samuelho-dev/git-flow/.github/docker-build-push.yml@v1 not found
 ```
 
 **Solution:**
@@ -1102,7 +1102,7 @@ Use `secrets: inherit` to pass all secrets:
 ```yaml
 jobs:
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app
     secrets: inherit  # ← Add this
@@ -1113,7 +1113,7 @@ Or pass secrets explicitly:
 ```yaml
 jobs:
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app
     secrets:
@@ -1147,7 +1147,7 @@ permissions:
 
 jobs:
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     # ...
 ```
 
@@ -1167,7 +1167,7 @@ Pass GitHub context as inputs:
 ```yaml
 jobs:
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: ${{ github.event.repository.name }}  # ← Evaluate in caller
       push: ${{ github.ref == 'refs/heads/main' }}  # ← Conditional logic
@@ -1189,13 +1189,13 @@ Ensure artifact names match exactly:
 ```yaml
 jobs:
   plan:
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/plan.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-plan.yml@v1
     with:
       upload-plan: true  # Uploads as terraform-plan-${{ github.sha }}
 
   apply:
     needs: plan
-    uses: samuelho-dev/git-flow/.github/workflows/terraform/apply.yml@v1
+    uses: samuelho-dev/git-flow/.github/terraform-apply.yml@v1
     with:
       plan-artifact-name: terraform-plan-${{ github.sha }}  # ← Must match
 ```
@@ -1215,13 +1215,13 @@ Check input parameters are being passed correctly:
 # ❌ Wrong: Missing required inputs
 jobs:
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     secrets: inherit
 
 # ✅ Correct: All required inputs provided
 jobs:
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
     with:
       image: my-app  # ← Required input
       push: true

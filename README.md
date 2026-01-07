@@ -22,39 +22,39 @@ Production-grade, vetted GitHub Actions workflows for Kubernetes GitOps infrastr
 
 | Workflow | Description | Status |
 |----------|-------------|--------|
-| [`docker/build-push.yml`](workflows/docker/build-push.yml) | Build, scan, sign & push Docker images | ✅ Ready |
+| [`docker-build-push.yml`](.github/workflows/docker-build-push.yml) | Build, scan, sign & push Docker images | ✅ Ready |
 
 ### Security Workflows
 
 | Workflow | Description | Status |
 |----------|-------------|--------|
-| [`security/trivy-scan.yml`](workflows/security/trivy-scan.yml) | Comprehensive vulnerability scanning | ✅ Ready |
-| [`security/gitleaks-scan.yml`](workflows/security/gitleaks-scan.yml) | Secret detection and prevention | ✅ Ready |
-| [`security/sbom-generate.yml`](workflows/security/sbom-generate.yml) | Generate Software Bill of Materials | ✅ Ready |
+| [`trivy-scan.yml`](.github/workflows/trivy-scan.yml) | Comprehensive vulnerability scanning | ✅ Ready |
+| [`gitleaks-scan.yml`](.github/workflows/gitleaks-scan.yml) | Secret detection and prevention | ✅ Ready |
+| [`sbom-generate.yml`](.github/workflows/sbom-generate.yml) | Generate Software Bill of Materials | ✅ Ready |
 
 ### Kubernetes Workflows
 
 | Workflow | Description | Status |
 |----------|-------------|--------|
-| [`kubernetes/helm-lint.yml`](workflows/kubernetes/helm-lint.yml) | Helm chart linting, validation & kubeconform | ✅ Ready |
-| [`kubernetes/helm-test.yml`](workflows/kubernetes/helm-test.yml) | Helm unittest execution with JUnit reports | ✅ Ready |
-| [`kubernetes/helm-publish.yml`](workflows/kubernetes/helm-publish.yml) | Package & publish charts to OCI registries | ✅ Ready |
-| [`kubernetes/kyverno-test.yml`](workflows/kubernetes/kyverno-test.yml) | Kyverno policy testing with Chainsaw | ✅ Ready |
+| [`helm-lint.yml`](.github/workflows/helm-lint.yml) | Helm chart linting, validation & kubeconform | ✅ Ready |
+| [`helm-test.yml`](.github/workflows/helm-test.yml) | Helm unittest execution with JUnit reports | ✅ Ready |
+| [`helm-publish.yml`](.github/workflows/helm-publish.yml) | Package & publish charts to OCI registries | ✅ Ready |
+| [`kyverno-test.yml`](.github/workflows/kyverno-test.yml) | Kyverno policy testing with Chainsaw | ✅ Ready |
 
 ### Infrastructure Workflows
 
 | Workflow | Description | Status |
 |----------|-------------|--------|
-| [`terraform/validate.yml`](workflows/terraform/validate.yml) | Terraform validation, formatting & security scanning | ✅ Ready |
-| [`terraform/plan.yml`](workflows/terraform/plan.yml) | Terraform plan with cost estimation & PR comments | ✅ Ready |
-| [`terraform/apply.yml`](workflows/terraform/apply.yml) | Terraform apply with state backup & approval gates | ✅ Ready |
+| [`terraform-validate.yml`](.github/workflows/terraform-validate.yml) | Terraform validation, formatting & security scanning | ✅ Ready |
+| [`terraform-plan.yml`](.github/workflows/terraform-plan.yml) | Terraform plan with cost estimation & PR comments | ✅ Ready |
+| [`terraform-apply.yml`](.github/workflows/terraform-apply.yml) | Terraform apply with state backup & approval gates | ✅ Ready |
 
 ### GitOps Workflows
 
 | Workflow | Description | Status |
 |----------|-------------|--------|
-| [`gitops/update-manifests.yml`](workflows/gitops/update-manifests.yml) | Update Kubernetes manifests (image tags, Helm values) | ✅ Ready |
-| [`gitops/argocd-sync.yml`](workflows/gitops/argocd-sync.yml) | ArgoCD application sync with health checks | ✅ Ready |
+| [`gitops-update-manifests.yml`](.github/workflows/gitops-update-manifests.yml) | Update Kubernetes manifests (image tags, Helm values) | ✅ Ready |
+| [`argocd-sync.yml`](.github/workflows/argocd-sync.yml) | ArgoCD application sync with health checks | ✅ Ready |
 
 ### Composite Actions
 
@@ -86,7 +86,7 @@ on:
 
 jobs:
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/docker-build-push.yml@v1
     with:
       context: .
       dockerfile: ./Dockerfile
@@ -103,14 +103,14 @@ jobs:
 ```yaml
 jobs:
   scan-code:
-    uses: samuelho-dev/git-flow/.github/workflows/security/trivy-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/trivy-scan.yml@v1
     with:
       scan-type: fs
       scan-ref: .
       severity: HIGH,CRITICAL
 
   scan-secrets:
-    uses: samuelho-dev/git-flow/.github/workflows/security/gitleaks-scan.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/gitleaks-scan.yml@v1
     with:
       fail-on-findings: true
 ```
@@ -120,7 +120,7 @@ jobs:
 ```yaml
 jobs:
   sbom:
-    uses: samuelho-dev/git-flow/.github/workflows/security/sbom-generate.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/sbom-generate.yml@v1
     with:
       target-type: directory
       target: .
@@ -185,7 +185,7 @@ Workflows never log secrets. Use GitHub Secrets or OIDC for authentication:
 ```yaml
 jobs:
   build:
-    uses: samuelho-dev/git-flow/.github/workflows/docker/build-push.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/docker-build-push.yml@v1
     secrets:
       registry-username: ${{ secrets.DOCKER_USERNAME }}
       registry-password: ${{ secrets.DOCKER_TOKEN }}
