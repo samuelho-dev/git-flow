@@ -229,8 +229,10 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: 1
         run: |
+          # For reusable workflows, the signature identity is the workflow file path
+          # not the calling repository, so we use a pattern matching either
           cosign verify \
-            --certificate-identity-regexp="${{ github.server_url }}/${{ github.repository }}.*" \
+            --certificate-identity-regexp="https://github.com/samuelho-dev/git-flow/.github/workflows/.*" \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
             ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
 
