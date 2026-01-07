@@ -62,6 +62,11 @@ on:
         required: false
         type: string
         default: 'HIGH,CRITICAL'
+      upload-sarif:
+        description: 'Upload SARIF to GitHub Security (requires Code Scanning enabled)'
+        required: false
+        type: boolean
+        default: false
     secrets:
       registry-username:
         description: 'Registry username'
@@ -160,8 +165,18 @@ jobs:
           provenance: true
           sbom: false
 
-      - name: Run Trivy vulnerability scanner
+      - name: Run Trivy vulnerability scanner (table output)
         if: inputs.scan
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
+        with:
+          image-ref: ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+          format: 'table'
+          severity: ${{ inputs.severity }}
+          timeout: '10m'
+          exit-code: '0' # Don't fail on vulnerabilities, just report
+
+      - name: Run Trivy vulnerability scanner (SARIF output)
+        if: inputs.scan && inputs.upload-sarif
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
           image-ref: ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
@@ -171,8 +186,7 @@ jobs:
           timeout: '10m'
 
       - name: Upload Trivy scan results to GitHub Security
-        if: inputs.scan
-        continue-on-error: true # Don't fail build if upload fails (permissions issue)
+        if: inputs.scan && inputs.upload-sarif
         uses: github/codeql-action/upload-sarif@48ab28a6f5dbc2a99bf1e0131198dd8f1df78169 # v3.28.0
         with:
           sarif_file: 'trivy-results.sarif'
