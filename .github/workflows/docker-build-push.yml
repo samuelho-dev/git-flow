@@ -200,6 +200,7 @@ jobs:
           image: ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
           format: 'spdx-json'
           output-file: 'sbom.spdx.json'
+          artifact-name: ${{ inputs.image }}-sbom.spdx.json
           upload-artifact: true
           upload-release-assets: false
 
