@@ -201,9 +201,16 @@ jobs:
           image: ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
           format: 'spdx-json'
           output-file: 'sbom.spdx.json'
-          artifact-name: sbom-${{ inputs.image }}
-          upload-artifact: true
+          upload-artifact: false  # Disabled: reusable workflow artifact upload has issues
           upload-release-assets: false
+
+      - name: Upload SBOM as artifact
+        if: inputs.sbom
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ inputs.image }}
+          path: sbom.spdx.json
+          retention-days: 30
 
       - name: Install Cosign
         if: inputs.sign
