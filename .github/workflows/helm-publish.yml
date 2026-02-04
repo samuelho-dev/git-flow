@@ -127,6 +127,21 @@ jobs:
           echo "path=$REPO_PATH" >> $GITHUB_OUTPUT
           echo "Repository path: $REPO_PATH"
 
+      # Login early to enable pulling OCI dependencies
+      - name: Log in to OCI registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.registry-username || github.actor }}
+          password: ${{ secrets.registry-password || secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Helm OCI registry
+        run: |
+          echo "${{ secrets.registry-password || secrets.GITHUB_TOKEN }}" | \
+            helm registry login ${{ inputs.registry }} \
+            --username "${{ secrets.registry-username || github.actor }}" \
+            --password-stdin
+
       - name: Add Helm repositories
         working-directory: ${{ inputs.chart-path }}
         run: |
@@ -181,13 +196,6 @@ jobs:
           else
             echo "⚠️  No GPG key provided, skipping import"
           fi
-
-      - name: Log in to primary registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
-        with:
-          registry: ${{ inputs.registry }}
-          username: ${{ secrets.registry-username || github.actor }}
-          password: ${{ secrets.registry-password || secrets.GITHUB_TOKEN }}
 
       - name: Push chart to OCI registry
         id: push
