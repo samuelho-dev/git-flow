@@ -171,10 +171,16 @@ jobs:
           helm provenance "$CHART_FILE" || echo "⚠️  Provenance generation failed (GPG key may not be configured)"
 
       - name: Import GPG key
-        if: inputs.sign-chart && secrets.gpg-private-key != ''
+        if: inputs.sign-chart
+        env:
+          GPG_KEY: ${{ secrets.gpg-private-key }}
         run: |
-          echo "${{ secrets.gpg-private-key }}" | gpg --batch --import
-          gpg --list-secret-keys
+          if [ -n "$GPG_KEY" ]; then
+            echo "$GPG_KEY" | gpg --batch --import
+            gpg --list-secret-keys
+          else
+            echo "⚠️  No GPG key provided, skipping import"
+          fi
 
       - name: Log in to primary registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
