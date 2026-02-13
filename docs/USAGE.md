@@ -10,9 +10,10 @@ Complete guide for using git-flow reusable workflows in your projects.
 4. [Kubernetes Workflows](#kubernetes-workflows)
 5. [Infrastructure Workflows](#infrastructure-workflows)
 6. [GitOps Workflows](#gitops-workflows)
-7. [Composite Actions](#composite-actions)
-8. [Best Practices](#best-practices)
-9. [Troubleshooting](#troubleshooting)
+7. [Git Workflows](#git-workflows)
+8. [Composite Actions](#composite-actions)
+9. [Best Practices](#best-practices)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -933,6 +934,112 @@ jobs:
       dry-run: true
     secrets:
       argocd-token: ${{ secrets.ARGOCD_TOKEN }}
+```
+
+---
+
+## Git Workflows
+
+### `sync-main-to-dev.yml`
+
+Keep a target branch (e.g. `dev`) in sync with a source branch (e.g. `main`). The workflow tries the cleanest merge strategy first and escalates only when needed:
+
+1. **Fast-forward** — no merge commit noise
+2. **Merge commit** — when target has diverged
+3. **Open a PR** — when there are merge conflicts that require human resolution
+
+#### Inputs
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `source-branch` | string | `main` | Branch to sync from |
+| `target-branch` | string | `dev` | Branch to sync to |
+| `create-pr-on-conflict` | boolean | `true` | Open a PR if merge conflicts prevent automatic sync |
+| `pr-labels` | string | `automated,sync` | Comma-separated labels for conflict PRs |
+
+#### Secrets
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `token` | No | GitHub token with repo write access (falls back to `GITHUB_TOKEN`) |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `result` | Sync result: `fast-forward`, `merged`, `pr-created`, `up-to-date`, or `failed` |
+| `pr-number` | PR number if a conflict PR was created |
+
+#### Examples
+
+**Basic — sync main to dev on every push:**
+```yaml
+name: Sync main to dev
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  sync:
+    uses: samuelho-dev/git-flow/.github/workflows/sync-main-to-dev.yml@v1
+    permissions:
+      contents: write
+      pull-requests: write
+```
+
+**Custom branches:**
+```yaml
+jobs:
+  sync:
+    uses: samuelho-dev/git-flow/.github/workflows/sync-main-to-dev.yml@v1
+    with:
+      source-branch: release
+      target-branch: develop
+    permissions:
+      contents: write
+      pull-requests: write
+```
+
+**With a PAT for protected branches:**
+```yaml
+jobs:
+  sync:
+    uses: samuelho-dev/git-flow/.github/workflows/sync-main-to-dev.yml@v1
+    permissions:
+      contents: write
+      pull-requests: write
+    secrets:
+      token: ${{ secrets.SYNC_PAT }}
+```
+
+**Disable PR creation on conflict:**
+```yaml
+jobs:
+  sync:
+    uses: samuelho-dev/git-flow/.github/workflows/sync-main-to-dev.yml@v1
+    with:
+      create-pr-on-conflict: false
+    permissions:
+      contents: write
+      pull-requests: write
+```
+
+**Act on the result in a downstream job:**
+```yaml
+jobs:
+  sync:
+    uses: samuelho-dev/git-flow/.github/workflows/sync-main-to-dev.yml@v1
+    permissions:
+      contents: write
+      pull-requests: write
+
+  notify:
+    needs: sync
+    if: needs.sync.outputs.result == 'pr-created'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Conflict PR #${{ needs.sync.outputs.pr-number }} needs review"
 ```
 
 ---

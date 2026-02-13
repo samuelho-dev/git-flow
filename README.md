@@ -56,6 +56,12 @@ Production-grade, vetted GitHub Actions workflows for Kubernetes GitOps infrastr
 | [`gitops-update-manifests.yml`](.github/workflows/gitops-update-manifests.yml) | Update Kubernetes manifests (image tags, Helm values) | ✅ Ready |
 | [`argocd-sync.yml`](.github/workflows/argocd-sync.yml) | ArgoCD application sync with health checks | ✅ Ready |
 
+### Git Workflows
+
+| Workflow | Description | Status |
+|----------|-------------|--------|
+| [`sync-main-to-dev.yml`](.github/workflows/sync-main-to-dev.yml) | Sync source branch to target branch (ff → merge → PR) | ✅ Ready |
+
 ### Composite Actions
 
 | Action | Description | Status |

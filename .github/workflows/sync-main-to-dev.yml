@@ -1,0 +1,248 @@
+name: 'Sync Branch Forward'
+
+on:
+  workflow_call:
+    inputs:
+      source-branch:
+        description: 'Branch to sync from'
+        required: false
+        type: string
+        default: 'main'
+      target-branch:
+        description: 'Branch to sync to'
+        required: false
+        type: string
+        default: 'dev'
+      create-pr-on-conflict:
+        description: 'Open a PR if merge conflicts prevent automatic sync'
+        required: false
+        type: boolean
+        default: true
+      pr-labels:
+        description: 'Comma-separated labels for conflict PRs'
+        required: false
+        type: string
+        default: 'automated,sync'
+    secrets:
+      token:
+        description: 'GitHub token with repo write access (falls back to GITHUB_TOKEN)'
+        required: false
+    outputs:
+      result:
+        description: 'Sync result: fast-forward, merged, pr-created, up-to-date, or failed'
+        value: ${{ jobs.sync.outputs.result }}
+      pr-number:
+        description: 'PR number if a conflict PR was created'
+        value: ${{ jobs.sync.outputs.pr-number }}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: Sync ${{ inputs.source-branch }} to ${{ inputs.target-branch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      result: ${{ steps.result.outputs.result }}
+      pr-number: ${{ steps.conflict-pr.outputs.pr-number }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.token || github.token }}
+
+      - name: Configure git
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Check target branch exists
+        id: check-target
+        shell: bash
+        run: |
+          if git ls-remote --exit-code --heads origin "${{ inputs.target-branch }}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Target branch '${{ inputs.target-branch }}' does not exist — it will be created from '${{ inputs.source-branch }}'."
+          fi
+
+      - name: Create target branch from source
+        if: steps.check-target.outputs.exists == 'false'
+        shell: bash
+        run: |
+          git checkout -b "${{ inputs.target-branch }}" "origin/${{ inputs.source-branch }}"
+          git push origin "${{ inputs.target-branch }}"
+          echo "::notice::Created '${{ inputs.target-branch }}' from '${{ inputs.source-branch }}'."
+
+      - name: Compare branches
+        if: steps.check-target.outputs.exists == 'true'
+        id: compare
+        shell: bash
+        run: |
+          BEHIND=$(git rev-list --count "origin/${{ inputs.target-branch }}..origin/${{ inputs.source-branch }}")
+          AHEAD=$(git rev-list --count "origin/${{ inputs.source-branch }}..origin/${{ inputs.target-branch }}")
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          echo "ahead=$AHEAD" >> "$GITHUB_OUTPUT"
+          echo "Source is $BEHIND commit(s) ahead of target; target is $AHEAD commit(s) ahead of source."
+
+      - name: Exit early if up-to-date
+        if: steps.check-target.outputs.exists == 'true' && steps.compare.outputs.behind == '0'
+        id: up-to-date
+        shell: bash
+        run: |
+          echo "::notice::${{ inputs.target-branch }} is already up-to-date with ${{ inputs.source-branch }}."
+
+      - name: Attempt fast-forward merge
+        if: steps.check-target.outputs.exists == 'true' && steps.compare.outputs.behind != '0'
+        id: fast-forward
+        shell: bash
+        run: |
+          git checkout "${{ inputs.target-branch }}"
+          if git merge --ff-only "origin/${{ inputs.source-branch }}"; then
+            echo "success=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "success=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Attempt merge commit
+        if: steps.fast-forward.outputs.success == 'false'
+        id: merge-commit
+        shell: bash
+        run: |
+          # Reset working tree from failed ff attempt
+          git reset --hard "origin/${{ inputs.target-branch }}"
+          if git merge --no-edit "origin/${{ inputs.source-branch }}"; then
+            echo "success=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "success=false" >> "$GITHUB_OUTPUT"
+            git merge --abort
+          fi
+
+      - name: Push merged changes
+        if: steps.fast-forward.outputs.success == 'true' || steps.merge-commit.outputs.success == 'true'
+        shell: bash
+        run: |
+          git push origin "${{ inputs.target-branch }}"
+
+      - name: Open conflict PR
+        if: steps.merge-commit.outputs.success == 'false' && inputs.create-pr-on-conflict
+        id: conflict-pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.token || github.token }}
+        run: |
+          SYNC_BRANCH="sync/${{ inputs.source-branch }}-to-${{ inputs.target-branch }}"
+
+          # Clean up stale sync branch if it exists
+          git branch -D "$SYNC_BRANCH" 2>/dev/null || true
+          git push origin --delete "$SYNC_BRANCH" 2>/dev/null || true
+
+          # Create sync branch from source
+          git checkout -b "$SYNC_BRANCH" "origin/${{ inputs.source-branch }}"
+          git push origin "$SYNC_BRANCH"
+
+          # Build label args as an array
+          LABEL_ARGS=()
+          IFS=',' read -ra LABELS <<< "${{ inputs.pr-labels }}"
+          for label in "${LABELS[@]}"; do
+            trimmed="${label## }"
+            trimmed="${trimmed%% }"
+            if [ -n "$trimmed" ]; then
+              LABEL_ARGS+=(--label "$trimmed")
+            fi
+          done
+
+          PR_BODY="## Automatic sync failed — merge conflicts detected
+
+          This PR was created because \`${{ inputs.source-branch }}\` could not be automatically merged into \`${{ inputs.target-branch }}\`.
+
+          **Please resolve the conflicts and merge this PR to complete the sync.**
+
+          ---
+          *Created by [sync-main-to-dev](https://github.com/samuelho-dev/git-flow) workflow*"
+          # Strip leading whitespace added by YAML indentation
+          PR_BODY="${PR_BODY//          /}"
+
+          PR_URL=$(gh pr create \
+            --base "${{ inputs.target-branch }}" \
+            --head "$SYNC_BRANCH" \
+            --title "sync: merge ${{ inputs.source-branch }} into ${{ inputs.target-branch }}" \
+            --body "$PR_BODY" \
+            "${LABEL_ARGS[@]}" 2>&1) || true
+
+          PR_NUMBER=$(echo "$PR_URL" | grep -oP '/pull/\K\d+' || echo "")
+          echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "pr-url=$PR_URL" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$PR_NUMBER" ]; then
+            echo "::notice::Opened conflict PR #$PR_NUMBER: $PR_URL"
+          else
+            echo "::warning::Failed to create conflict PR. Output: $PR_URL"
+          fi
+
+      - name: Determine result
+        id: result
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ steps.check-target.outputs.exists }}" = "false" ]; then
+            echo "result=fast-forward" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.compare.outputs.behind }}" = "0" ]; then
+            echo "result=up-to-date" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.fast-forward.outputs.success }}" = "true" ]; then
+            echo "result=fast-forward" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.merge-commit.outputs.success }}" = "true" ]; then
+            echo "result=merged" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ steps.conflict-pr.outputs.pr-number }}" ]; then
+            echo "result=pr-created" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=failed" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate step summary
+        if: always()
+        shell: bash
+        run: |
+          RESULT="${{ steps.result.outputs.result }}"
+          {
+            echo "## Sync ${{ inputs.source-branch }} → ${{ inputs.target-branch }}"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          case "$RESULT" in
+            up-to-date)
+              echo "**Result:** Already up-to-date" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            fast-forward)
+              echo "**Result:** Fast-forward merge" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            merged)
+              echo "**Result:** Merge commit created" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            pr-created)
+              {
+                echo "**Result:** Conflict PR created"
+                echo ""
+                echo "**PR:** #${{ steps.conflict-pr.outputs.pr-number }}"
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            failed)
+              echo "**Result:** Sync failed" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+          esac
+
+          if [ "${{ steps.compare.outputs.behind }}" != "" ] && [ "${{ steps.compare.outputs.behind }}" != "0" ]; then
+            {
+              echo ""
+              echo "| Metric | Value |"
+              echo "|--------|-------|"
+              echo "| Commits to sync | ${{ steps.compare.outputs.behind }} |"
+              echo "| Target ahead by | ${{ steps.compare.outputs.ahead }} |"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
