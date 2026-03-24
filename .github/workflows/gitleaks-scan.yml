@@ -73,16 +73,8 @@ jobs:
           GITLEAKS_CONFIG: ${{ inputs.config-path }}
           GITLEAKS_BASELINE: ${{ inputs.baseline-path }}
           GITLEAKS_LOG_LEVEL: ${{ inputs.log-level }}
-        with:
-          args: >
-            --source=${{ inputs.scan-path }}
-            --report-format=${{ inputs.format }}
-            --report-path=gitleaks-results.${{ inputs.format }}
-            --log-level=${{ inputs.log-level }}
-            --redact
-            ${{ inputs.config-path != '' && format('--config={0}', inputs.config-path) || '' }}
-            ${{ inputs.baseline-path != '' && format('--baseline-path={0}', inputs.baseline-path) || '' }}
-            ${{ inputs.fail-on-findings == false && '--no-fail' || '' }}
+          GITLEAKS_ENABLE_COMMENTS: false
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
 
       - name: Count findings
         id: count
