@@ -15,7 +15,7 @@ on:
 jobs:
   test-workflow-outputs:
     name: Test Docker Workflow Outputs
-    runs-on: homelab-runners
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
