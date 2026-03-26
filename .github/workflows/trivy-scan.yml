@@ -48,6 +48,11 @@ on:
         required: false
         type: string
         default: '10m'
+      runs-on:
+        description: 'Runner label to execute the job on'
+        required: false
+        type: string
+        default: 'homelab-runners'
     outputs:
       findings-count:
         description: 'Number of security findings'
@@ -63,7 +68,7 @@ permissions:
 jobs:
   scan:
     name: Trivy Security Scan
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 15
     outputs:
       findings: ${{ steps.scan.outputs.findings }}

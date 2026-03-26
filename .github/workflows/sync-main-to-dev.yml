@@ -23,6 +23,11 @@ on:
         required: false
         type: string
         default: 'automated,sync'
+      runs-on:
+        description: 'Runner label to execute the job on'
+        required: false
+        type: string
+        default: 'homelab-runners'
     secrets:
       token:
         description: 'GitHub token with repo write access (falls back to GITHUB_TOKEN)'
@@ -42,7 +47,7 @@ permissions:
 jobs:
   sync:
     name: Sync ${{ inputs.source-branch }} to ${{ inputs.target-branch }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 10
     outputs:
       result: ${{ steps.result.outputs.result }}

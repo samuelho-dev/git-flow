@@ -38,6 +38,11 @@ on:
         required: false
         type: string
         default: 'info'
+      runs-on:
+        description: 'Runner label to execute the job on'
+        required: false
+        type: string
+        default: 'homelab-runners'
     outputs:
       findings-count:
         description: 'Number of secrets found'
@@ -53,7 +58,7 @@ permissions:
 jobs:
   scan:
     name: Gitleaks Secret Scan
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 10
     outputs:
       findings: ${{ steps.count.outputs.findings }}

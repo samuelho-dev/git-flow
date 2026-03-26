@@ -42,6 +42,11 @@ on:
         required: false
         type: boolean
         default: true
+      runs-on:
+        description: 'Runner label to execute the job on'
+        required: false
+        type: string
+        default: 'homelab-runners'
     secrets:
       registry-username:
         description: 'Registry username (defaults to github.actor)'
@@ -74,7 +79,7 @@ permissions:
 jobs:
   publish:
     name: Package & Publish Chart
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 15
     outputs:
       version: ${{ steps.chart-info.outputs.version }}
