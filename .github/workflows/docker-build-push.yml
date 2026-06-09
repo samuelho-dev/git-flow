@@ -79,6 +79,16 @@ on:
       registry-password:
         description: 'Registry password/token'
         required: false
+      secret-build-args:
+        description: >-
+          Build args whose VALUES are secrets (KEY=VALUE, one per line), merged
+          with `build-args`. Pass these here, NOT via a caller job `output` —
+          GitHub strips secret values from job outputs, so an output handoff
+          silently yields empty build-args. Secrets resolve inside this job's
+          steps, so they reach the build correctly. NOTE: build-args bake into
+          image layers (visible via `docker history`) — use only for values that
+          are public anyway (e.g. NEXT_PUBLIC_*), never for true secrets.
+        required: false
     outputs:
       digest:
         description: 'Image digest (sha256:...)'
@@ -146,12 +156,22 @@ jobs:
 
       - name: Parse build arguments
         id: build-args
-        if: inputs.build-args != ''
         shell: bash
+        # Merge plain `build-args` with `secret-build-args`. The secret values
+        # are read from an env var (not interpolated into the script body) so
+        # they aren't echoed; GitHub masks them in logs, and step outputs keep
+        # their real values WITHIN this job (only cross-job outputs get stripped,
+        # which is the bug this input exists to avoid). docker/build-push-action
+        # de-dupes by key, so a key in both wins from whichever appears last —
+        # secret args are appended last so they take precedence.
+        env:
+          PLAIN_BUILD_ARGS: ${{ inputs.build-args }}
+          SECRET_BUILD_ARGS: ${{ secrets.secret-build-args }}
         run: |
           {
             echo "args<<EOF"
-            echo "${{ inputs.build-args }}"
+            [ -n "$PLAIN_BUILD_ARGS" ] && printf '%s\n' "$PLAIN_BUILD_ARGS"
+            [ -n "$SECRET_BUILD_ARGS" ] && printf '%s\n' "$SECRET_BUILD_ARGS"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
