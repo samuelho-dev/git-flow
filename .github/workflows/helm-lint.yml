@@ -65,6 +65,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   lint:
@@ -75,8 +76,8 @@ jobs:
       run:
         working-directory: ${{ inputs.chart-path }}
     env:
-      REGISTRY_USERNAME: ${{ secrets.registry-username }}
-      REGISTRY_PASSWORD: ${{ secrets.registry-password }}
+      REGISTRY_USERNAME: ${{ secrets.registry-username || github.actor }}
+      REGISTRY_PASSWORD: ${{ secrets.registry-password || secrets.GITHUB_TOKEN }}
       VALUES_FILES: ${{ inputs.values-files }}
       LINT_STRICT: ${{ inputs.lint-strict }}
     outputs:
@@ -91,7 +92,7 @@ jobs:
           version: ${{ inputs.helm-version }}
 
       - name: Log in to OCI registry
-        if: env.REGISTRY_USERNAME != ''
+        if: env.REGISTRY_PASSWORD != ''
         run: |
           set -euo pipefail
           echo "$REGISTRY_PASSWORD" | helm registry login "${{ inputs.oci-registry }}" \
