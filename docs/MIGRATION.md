@@ -10,9 +10,8 @@ Comprehensive guide for migrating from inline GitHub Actions commands to git-flo
 4. [Security Workflows](#security-workflows)
 5. [Kubernetes/Helm Workflows](#kuberneteshelm-workflows)
 6. [Terraform Workflows](#terraform-workflows)
-7. [GitOps Workflows](#gitops-workflows)
-8. [Common Migration Patterns](#common-migration-patterns)
-9. [Troubleshooting](#troubleshooting)
+7. [Common Migration Patterns](#common-migration-patterns)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -43,7 +42,6 @@ Comprehensive guide for migrating from inline GitHub Actions commands to git-flo
 | Security | Low | 10-20 minutes |
 | Kubernetes/Helm | Medium | 30-60 minutes |
 | Terraform | Medium | 45-90 minutes |
-| GitOps | High | 1-3 hours |
 
 ---
 
@@ -470,11 +468,10 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v4
         with:
-          version: 'v3.14.0'
+          version: 'v3.16.3'
 
       - name: Lint Helm chart
-        run: |
-          helm lint charts/my-app
+        run: helm lint charts/my-app
 
       - name: Install kubeconform
         run: |
@@ -484,7 +481,7 @@ jobs:
 
       - name: Template and validate
         run: |
-          helm template charts/my-app | kubeconform -strict -kubernetes-version 1.30.0
+          helm template charts/my-app | kubeconform -strict
 ```
 
 **After (Reusable Workflow):**
@@ -499,67 +496,12 @@ on:
 
 jobs:
   lint:
-    uses: samuelho-dev/git-flow/.github/helm-lint.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/helm-lint.yml@v1
     with:
       chart-path: charts/my-app
-      kubeconform: true
-      kubernetes-version: '1.30.0'
-      strict: true
 ```
 
-**Savings:** 30 lines → 12 lines (60% reduction)
-
----
-
-### Migrate: Helm Chart Testing
-
-**Before (Inline Commands):**
-
-```yaml
-name: Helm Test
-
-on:
-  pull_request:
-    paths:
-      - 'charts/**'
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-
-      - name: Install unittest plugin
-        run: |
-          helm plugin install https://github.com/helm-unittest/helm-unittest
-
-      - name: Run tests
-        run: |
-          helm unittest charts/my-app
-```
-
-**After (Reusable Workflow):**
-
-```yaml
-name: Helm Test
-
-on:
-  pull_request:
-    paths:
-      - 'charts/**'
-
-jobs:
-  test:
-    uses: samuelho-dev/git-flow/.github/helm-test.yml@v1
-    with:
-      chart-path: charts/my-app
-      output-format: junit
-```
-
-**Savings:** 20 lines → 10 lines (50% reduction)
+**Savings:** 30 lines → 8 lines (73% reduction)
 
 ---
 
@@ -677,17 +619,14 @@ on:
 
 jobs:
   validate:
-    uses: samuelho-dev/git-flow/.github/terraform-validate.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/terraform-validate.yml@v1
     with:
       terraform-path: terraform/
-      terraform-version: 1.9.8
-      fmt-check: true
-      tfsec-scan: true
-    secrets:
-      terraform-token: ${{ secrets.TF_API_TOKEN }}
+      format-check: true
+      security-scan: true
 ```
 
-**Savings:** 32 lines → 14 lines (56% reduction)
+**Savings:** 32 lines → 10 lines (69% reduction)
 
 ---
 
@@ -713,14 +652,12 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
-          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-west-2
 
       - name: Terraform Init
         run: terraform init
@@ -747,28 +684,25 @@ on:
     paths:
       - 'terraform/**'
 
+permissions:
+  id-token: write
+  pull-requests: write
+
 jobs:
   plan:
-    uses: samuelho-dev/git-flow/.github/terraform-plan.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/terraform-plan.yml@v1
     with:
       terraform-path: terraform/
-      terraform-version: 1.9.8
-      upload-plan: true
-      enable-infracost: true
       post-pr-comment: true
     secrets:
-      terraform-token: ${{ secrets.TF_API_TOKEN }}
-      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      infracost-api-key: ${{ secrets.INFRACOST_API_KEY }}
+      aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
 ```
 
-**Savings:** 40 lines → 18 lines (55% reduction)
+**Savings:** 40 lines → 14 lines (65% reduction)
 
 **Added Benefits:**
-- 💰 Infracost cost estimation
 - 💬 Automated PR comments with plan summary
-- 📊 Resource change statistics
+- 📊 Has-changes output to gate apply jobs
 
 ---
 
@@ -796,14 +730,12 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
-          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-west-2
 
       - name: Terraform Init
         run: terraform init
@@ -825,136 +757,34 @@ on:
     paths:
       - 'terraform/**'
 
+permissions:
+  id-token: write
+
 jobs:
-  apply:
-    uses: samuelho-dev/git-flow/.github/terraform-apply.yml@v1
+  plan:
+    uses: samuelho-dev/git-flow/.github/workflows/terraform-plan.yml@v1
     with:
       terraform-path: terraform/
-      terraform-version: 1.9.8
-      environment: production
-      backup-state: true
     secrets:
-      terraform-token: ${{ secrets.TF_API_TOKEN }}
-      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+
+  apply:
+    needs: plan
+    uses: samuelho-dev/git-flow/.github/workflows/terraform-apply.yml@v1
+    with:
+      terraform-path: terraform/
+      plan-artifact-name: ${{ needs.plan.outputs.plan-artifact-name }}
+      environment: production
+    secrets:
+      aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
 ```
 
-**Savings:** 35 lines → 16 lines (54% reduction)
+**Savings:** 35 lines → 20 lines (43% reduction)
 
 **Added Benefits:**
-- 💾 Automatic state backup before apply
-- ✅ Post-apply validation
-- 📊 Resource change tracking
-
----
-
-## GitOps Workflows
-
-### Migrate: Manual Manifest Updates
-
-**Before (Manual Process):**
-
-1. Build Docker image
-2. Manually edit Kubernetes YAML files
-3. Change image tags in multiple files
-4. Commit changes
-5. Push to repository
-6. Wait for ArgoCD auto-sync (or manually sync)
-
-**After (Automated Workflow):**
-
-```yaml
-name: GitOps Deployment
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  # Build image
-  build:
-    uses: samuelho-dev/git-flow/.github/docker-build-push.yml@v1
-    with:
-      image: my-app
-      push: true
-    secrets: inherit
-
-  # Update manifests automatically
-  update-manifests:
-    needs: build
-    uses: samuelho-dev/git-flow/.github/gitops-update-manifests.yml@v1
-    with:
-      manifest-path: deploy/k8s/production
-      update-type: image
-      image-name: ghcr.io/${{ github.repository_owner }}/my-app
-      image-tag: sha-${{ github.sha }}
-
-  # Sync ArgoCD automatically
-  argocd-sync:
-    needs: update-manifests
-    uses: samuelho-dev/git-flow/.github/argocd-sync.yml@v1
-    with:
-      argocd-server: argocd.example.com
-      argocd-app-name: my-app-production
-      wait-for-sync: true
-      health-check: true
-    secrets:
-      argocd-token: ${{ secrets.ARGOCD_TOKEN }}
-```
-
-**Benefits:**
-- ✅ Fully automated deployment pipeline
-- ✅ No manual manifest editing
-- ✅ Consistent image tag updates
-- ✅ Automated ArgoCD sync with health checks
-- ✅ Complete audit trail in Git
-
----
-
-### Migrate: Helm Values Updates
-
-**Before (Manual Process):**
-
-```bash
-# Manual steps
-yq eval '.image.tag = "v1.2.3"' -i values-production.yaml
-git add values-production.yaml
-git commit -m "Update image tag to v1.2.3"
-git push
-```
-
-**After (Automated Workflow):**
-
-```yaml
-name: Update Helm Values
-
-on:
-  workflow_dispatch:
-    inputs:
-      environment:
-        type: choice
-        options: [dev, staging, production]
-      helm-key:
-        type: string
-      helm-value:
-        type: string
-
-jobs:
-  update:
-    uses: samuelho-dev/git-flow/.github/gitops-update-manifests.yml@v1
-    with:
-      manifest-path: deploy/helm/environments/${{ inputs.environment }}
-      update-type: helm-values
-      helm-key: ${{ inputs.helm-key }}
-      helm-value: ${{ inputs.helm-value }}
-      create-pr: true
-```
-
-**Benefits:**
-- ✅ No local yq/kubectl required
-- ✅ Creates PR for review
-- ✅ Consistent commit messages
-- ✅ Automated validation
+- ✅ Required-reviewer approval gate via GitHub Environment
+- 🔒 OIDC — no static AWS credentials
+- 📦 Plan artifact ensures apply matches reviewed plan
 
 ---
 
@@ -1189,15 +1019,20 @@ Ensure artifact names match exactly:
 ```yaml
 jobs:
   plan:
-    uses: samuelho-dev/git-flow/.github/terraform-plan.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/terraform-plan.yml@v1
     with:
-      upload-plan: true  # Uploads as terraform-plan-${{ github.sha }}
+      terraform-path: terraform/
+    secrets:
+      aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
 
   apply:
     needs: plan
-    uses: samuelho-dev/git-flow/.github/terraform-apply.yml@v1
+    uses: samuelho-dev/git-flow/.github/workflows/terraform-apply.yml@v1
     with:
-      plan-artifact-name: terraform-plan-${{ github.sha }}  # ← Must match
+      terraform-path: terraform/
+      plan-artifact-name: ${{ needs.plan.outputs.plan-artifact-name }}  # ← Use the output directly
+    secrets:
+      aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
 ```
 
 ---

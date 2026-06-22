@@ -72,6 +72,11 @@ on:
         required: false
         type: string
         default: 'homelab-runners'
+      cosign-identity-regexp:
+        description: 'Cosign certificate identity regexp for verification. Defaults to this (git-flow) reusable workflow repo, since the OIDC identity of a reusable workflow is its own path, not the caller. Override when forking git-flow under another org.'
+        required: false
+        type: string
+        default: 'https://github.com/samuelho-dev/git-flow/.github/workflows/.*'
     secrets:
       registry-username:
         description: 'Registry username'
@@ -244,7 +249,7 @@ jobs:
           # For reusable workflows, the signature identity is the workflow file path
           # not the calling repository, so we use a pattern matching either
           cosign verify \
-            --certificate-identity-regexp="https://github.com/samuelho-dev/git-flow/.github/workflows/.*" \
+            --certificate-identity-regexp="${{ inputs.cosign-identity-regexp }}" \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
             ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
 

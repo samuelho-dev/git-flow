@@ -71,6 +71,8 @@ jobs:
     outputs:
       sbom-path: ${{ inputs.output-file }}
       vulnerabilities: ${{ steps.scan.outputs.findings }}
+    env:
+      REGISTRY_USERNAME: ${{ secrets.registry-username }}
 
     steps:
       - name: Checkout repository
@@ -78,7 +80,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Log in to container registry
-        if: inputs.target-type == 'image' && secrets.registry-username != ''
+        if: inputs.target-type == 'image' && env.REGISTRY_USERNAME != ''
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ${{ contains(inputs.target, 'ghcr.io') && 'ghcr.io' || 'docker.io' }}

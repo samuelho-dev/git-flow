@@ -1,0 +1,161 @@
+name: 'Service Smoke Check'
+
+# Polls a JSON /health endpoint until it returns an accepted status (and optional
+# version match). `soak-passes` controls how many CONSECUTIVE good probes are
+# required: 1 = first-success smoke after a deploy; N = an N-probe soak window for
+# a canary gate. Fails the job if the target never satisfies the criteria.
+
+on:
+  workflow_call:
+    inputs:
+      url:
+        description: 'Base URL of the service (e.g. https://api.creativetoolkits.com)'
+        required: true
+        type: string
+      path:
+        description: 'Health endpoint path'
+        required: false
+        type: string
+        default: '/health'
+      expected-version:
+        description: 'Require payload.version to equal this value (optional)'
+        required: false
+        type: string
+        default: ''
+      accept-status:
+        description: 'Comma-separated payload.status values treated as healthy'
+        required: false
+        type: string
+        default: 'ok,degraded'
+      expected-http:
+        description: 'Required HTTP status code'
+        required: false
+        type: number
+        default: 200
+      retries:
+        description: 'Maximum number of probe attempts'
+        required: false
+        type: number
+        default: 20
+      interval-seconds:
+        description: 'Seconds between probes'
+        required: false
+        type: number
+        default: 15
+      soak-passes:
+        description: 'Consecutive successful probes required (1 = smoke, N = soak)'
+        required: false
+        type: number
+        default: 1
+      runs-on:
+        description: 'Runner label to execute the job on'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+    outputs:
+      ok:
+        description: 'true when the smoke check passed'
+        value: ${{ jobs.smoke.outputs.ok }}
+      version:
+        description: 'Last observed payload.version'
+        value: ${{ jobs.smoke.outputs.version }}
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Service Smoke Check
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 20
+    outputs:
+      ok: ${{ steps.poll.outputs.ok }}
+      version: ${{ steps.poll.outputs.version }}
+    steps:
+      - name: Poll health endpoint
+        id: poll
+        env:
+          BASE_URL: ${{ inputs.url }}
+          HEALTH_PATH: ${{ inputs.path }}
+          EXPECTED_VERSION: ${{ inputs.expected-version }}
+          ACCEPT_STATUS: ${{ inputs.accept-status }}
+          EXPECTED_HTTP: ${{ inputs.expected-http }}
+          RETRIES: ${{ inputs.retries }}
+          INTERVAL: ${{ inputs.interval-seconds }}
+          SOAK_PASSES: ${{ inputs.soak-passes }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, time, urllib.error, urllib.parse, urllib.request
+
+          base = os.environ["BASE_URL"].rstrip("/")
+          path = os.environ["HEALTH_PATH"]
+          url = base + (path if path.startswith("/") else "/" + path)
+          expected_version = os.environ.get("EXPECTED_VERSION", "")
+          accept = [s.strip() for s in os.environ.get("ACCEPT_STATUS", "ok,degraded").split(",") if s.strip()]
+          expected_http = int(os.environ.get("EXPECTED_HTTP", "200"))
+          retries = int(os.environ.get("RETRIES", "20"))
+          interval = int(os.environ.get("INTERVAL", "15"))
+          soak = int(os.environ.get("SOAK_PASSES", "1"))
+
+          def probe():
+              sep = "&" if urllib.parse.urlsplit(url).query else "?"
+              probe_url = f"{url}{sep}ci_probe={time.time_ns()}"
+              req = urllib.request.Request(probe_url, headers={"Cache-Control": "no-cache"})
+              try:
+                  with urllib.request.urlopen(req, timeout=10) as resp:
+                      code, body = resp.status, resp.read().decode("utf-8")
+              except (OSError, urllib.error.URLError) as err:
+                  return False, f"request failed: {err}", ""
+              if code != expected_http:
+                  return False, f"HTTP {code}: {body[:300]}", ""
+              try:
+                  payload = json.loads(body)
+              except json.JSONDecodeError as err:
+                  return False, f"invalid JSON: {err}", ""
+              status = payload.get("status")
+              version = payload.get("version") or ""
+              if accept and status not in accept:
+                  return False, f"status={status!r} not in {accept}", version
+              if expected_version and version != expected_version:
+                  return False, f"version={version!r} != {expected_version!r}", version
+              return True, f"status={status}, version={version}", version
+
+          def write_output(key, value):
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+                  handle.write(f"{key}={value}\n")
+
+          passes = 0
+          last_version = ""
+          for attempt in range(1, retries + 1):
+              ok, message, version = probe()
+              last_version = version or last_version
+              print(f"attempt {attempt}/{retries}: {'OK' if ok else 'FAIL'} - {message}")
+              if ok:
+                  passes += 1
+                  if passes >= soak:
+                      write_output("ok", "true")
+                      write_output("version", last_version)
+                      print(f"smoke passed ({passes}/{soak} consecutive)")
+                      sys.exit(0)
+              else:
+                  passes = 0
+              if attempt < retries:
+                  time.sleep(interval)
+
+          write_output("ok", "false")
+          write_output("version", last_version)
+          print("::error::smoke check did not pass within the retry budget")
+          sys.exit(1)
+          PY
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## 🩺 Service Smoke Check"
+            echo ""
+            echo "**URL:** \`${{ inputs.url }}${{ inputs.path }}\`"
+            echo "**Soak passes:** \`${{ inputs.soak-passes }}\`"
+            echo "**OK:** \`${{ steps.poll.outputs.ok }}\`"
+            echo "**Version:** \`${{ steps.poll.outputs.version }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

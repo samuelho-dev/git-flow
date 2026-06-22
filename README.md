@@ -9,9 +9,9 @@ Production-grade, vetted GitHub Actions workflows for Kubernetes GitOps infrastr
 
 - **🐳 Docker**: Build, scan, sign, and push with multi-platform support
 - **🔒 Security**: Trivy, Gitleaks, SBOM generation, Cosign signing
-- **☸️  Kubernetes**: Helm lint, test, publish & Kyverno policy testing
+- **☸️  Kubernetes**: Helm chart lint + publish to OCI registries
 - **🏗️  Infrastructure**: Terraform validate, plan, and apply workflows
-- **🚀 GitOps**: ArgoCD sync and automated manifest updates
+- **🚀 GitOps**: ArgoCD sync with health gates + AWS ECS deploy/smoke
 - **📦 Supply Chain**: SBOM, provenance, and vulnerability tracking
 - **🔄 Auto-Updates**: Renovate-powered SHA-pinned action updates
 - **🧪 Testing**: Node.js/TypeScript testing with coverage (coming soon)
@@ -36,25 +36,29 @@ Production-grade, vetted GitHub Actions workflows for Kubernetes GitOps infrastr
 
 | Workflow | Description | Status |
 |----------|-------------|--------|
-| [`helm-lint.yml`](.github/workflows/helm-lint.yml) | Helm chart linting, validation & kubeconform | ✅ Ready |
-| [`helm-test.yml`](.github/workflows/helm-test.yml) | Helm unittest execution with JUnit reports | ✅ Ready |
+| [`helm-lint.yml`](.github/workflows/helm-lint.yml) | Lint chart, render templates & kubeconform validation | ✅ Ready |
 | [`helm-publish.yml`](.github/workflows/helm-publish.yml) | Package & publish charts to OCI registries | ✅ Ready |
-| [`kyverno-test.yml`](.github/workflows/kyverno-test.yml) | Kyverno policy testing with Chainsaw | ✅ Ready |
 
 ### Infrastructure Workflows
 
 | Workflow | Description | Status |
 |----------|-------------|--------|
-| [`terraform-validate.yml`](.github/workflows/terraform-validate.yml) | Terraform validation, formatting & security scanning | ✅ Ready |
-| [`terraform-plan.yml`](.github/workflows/terraform-plan.yml) | Terraform plan with cost estimation & PR comments | ✅ Ready |
-| [`terraform-apply.yml`](.github/workflows/terraform-apply.yml) | Terraform apply with state backup & approval gates | ✅ Ready |
+| [`terraform-validate.yml`](.github/workflows/terraform-validate.yml) | fmt + validate + Trivy IaC scan (no cloud creds) | ✅ Ready |
+| [`terraform-plan.yml`](.github/workflows/terraform-plan.yml) | Plan via OIDC, plan artifact, PR comment, optional Infracost | ✅ Ready |
+| [`terraform-apply.yml`](.github/workflows/terraform-apply.yml) | Apply a saved plan artifact, optional environment gate | ✅ Ready |
+
+### Deployment Workflows
+
+| Workflow | Description | Status |
+|----------|-------------|--------|
+| [`ecs-deploy.yml`](.github/workflows/ecs-deploy.yml) | Deploy an image to an ECS Express Mode service via OIDC | ✅ Ready |
+| [`ecs-smoke.yml`](.github/workflows/ecs-smoke.yml) | Poll a JSON `/health` endpoint (first-success or N-probe soak) | ✅ Ready |
 
 ### GitOps Workflows
 
 | Workflow | Description | Status |
 |----------|-------------|--------|
-| [`gitops-update-manifests.yml`](.github/workflows/gitops-update-manifests.yml) | Update Kubernetes manifests (image tags, Helm values) | ✅ Ready |
-| [`argocd-sync.yml`](.github/workflows/argocd-sync.yml) | ArgoCD application sync with health checks | ✅ Ready |
+| [`argocd-sync.yml`](.github/workflows/argocd-sync.yml) | ArgoCD app sync + scoped Synced/Healthy wait | ✅ Ready |
 
 ### Git Workflows
 

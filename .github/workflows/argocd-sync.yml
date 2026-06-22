@@ -1,0 +1,127 @@
+name: 'ArgoCD Sync & Wait'
+
+# Waits for an ArgoCD Application to reach Synced + Healthy (optionally triggering
+# an explicit sync first). The wait can be scoped to specific resources to avoid
+# hanging on unrelated `Progressing` objects. The runner must be able to reach the
+# ArgoCD API (typically an in-cluster self-hosted runner), hence the homelab-runners
+# default — override `runs-on` for other clusters.
+
+on:
+  workflow_call:
+    inputs:
+      app-name:
+        description: 'ArgoCD Application name'
+        required: true
+        type: string
+      argocd-server:
+        description: 'ArgoCD server address (e.g. argocd-server.argocd.svc.cluster.local:80)'
+        required: true
+        type: string
+      resources:
+        description: 'Newline-separated "group:Kind:name" specs to scope the wait (optional)'
+        required: false
+        type: string
+        default: ''
+      sync:
+        description: 'Run an explicit `argocd app sync` before waiting'
+        required: false
+        type: boolean
+        default: false
+      sync-timeout:
+        description: 'Seconds to wait for Synced'
+        required: false
+        type: number
+        default: 300
+      health-timeout:
+        description: 'Seconds to wait for Healthy'
+        required: false
+        type: number
+        default: 300
+      plaintext:
+        description: 'Dial the ArgoCD API over plaintext h2c (in-cluster :80)'
+        required: false
+        type: boolean
+        default: true
+      runs-on:
+        description: 'Runner label to execute the job on (must reach the ArgoCD API)'
+        required: false
+        type: string
+        default: 'homelab-runners'
+    secrets:
+      argocd-token:
+        description: 'ArgoCD auth token'
+        required: true
+    outputs:
+      result:
+        description: 'Sync/wait result (success|failure)'
+        value: ${{ jobs.sync.outputs.result }}
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: ArgoCD Sync & Wait
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 15
+    env:
+      ARGOCD_SERVER: ${{ inputs.argocd-server }}
+      ARGOCD_AUTH_TOKEN: ${{ secrets.argocd-token }}
+      ARGOCD_OPTS: ${{ inputs.plaintext && '--plaintext' || '' }}
+      APP: ${{ inputs.app-name }}
+    outputs:
+      result: ${{ steps.done.outputs.result }}
+    steps:
+      - name: Install ArgoCD CLI
+        run: |
+          set -euo pipefail
+          sudo curl -fsSL -o /usr/local/bin/argocd \
+            https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          sudo chmod +x /usr/local/bin/argocd
+          argocd version --client --short
+
+      - name: Sync and wait
+        env:
+          RESOURCES: ${{ inputs.resources }}
+          DO_SYNC: ${{ inputs.sync }}
+          SYNC_TIMEOUT: ${{ inputs.sync-timeout }}
+          HEALTH_TIMEOUT: ${{ inputs.health-timeout }}
+        run: |
+          set -euo pipefail
+          res=()
+          while IFS= read -r r; do
+            [ -n "$r" ] && res+=(--resource "$r")
+          done <<< "$RESOURCES"
+
+          if [ "$DO_SYNC" = "true" ]; then
+            echo "argocd app sync $APP"
+            argocd app sync "$APP" --timeout "$SYNC_TIMEOUT" "${res[@]}"
+          fi
+
+          echo "Stage 1/2: wait --sync (max ${SYNC_TIMEOUT}s)"
+          argocd app wait "$APP" --sync --timeout "$SYNC_TIMEOUT" "${res[@]}"
+
+          echo "Stage 2/2: wait --health (max ${HEALTH_TIMEOUT}s)"
+          argocd app wait "$APP" --health --timeout "$HEALTH_TIMEOUT" "${res[@]}"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          argocd app get "$APP" --output wide || true
+          argocd app resources "$APP" || true
+
+      - name: Record result
+        id: done
+        if: always()
+        run: echo "result=${{ job.status }}" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## 🐙 ArgoCD Sync & Wait"
+            echo ""
+            echo "**App:** \`${{ inputs.app-name }}\`"
+            echo "**Server:** \`${{ inputs.argocd-server }}\`"
+            echo "**Result:** \`${{ job.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

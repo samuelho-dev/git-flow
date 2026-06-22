@@ -116,9 +116,11 @@ jobs:
           CHART_NAME=$(yq eval '.name' Chart.yaml)
           CHART_VERSION=$(yq eval '.version' Chart.yaml)
           CHART_APP_VERSION=$(yq eval '.appVersion' Chart.yaml)
-          echo "name=$CHART_NAME" >> $GITHUB_OUTPUT
-          echo "version=$CHART_VERSION" >> $GITHUB_OUTPUT
-          echo "app-version=$CHART_APP_VERSION" >> $GITHUB_OUTPUT
+          {
+            echo "name=$CHART_NAME"
+            echo "version=$CHART_VERSION"
+            echo "app-version=$CHART_APP_VERSION"
+          } >> "$GITHUB_OUTPUT"
           echo "Chart: $CHART_NAME v$CHART_VERSION (app: $CHART_APP_VERSION)"
 
       - name: Set repository path
@@ -129,7 +131,7 @@ jobs:
           else
             REPO_PATH="${{ github.repository_owner }}/charts"
           fi
-          echo "path=$REPO_PATH" >> $GITHUB_OUTPUT
+          echo "path=$REPO_PATH" >> "$GITHUB_OUTPUT"
           echo "Repository path: $REPO_PATH"
 
       # Login early to enable pulling OCI dependencies
@@ -179,7 +181,7 @@ jobs:
           helm package . --destination /tmp/charts
 
           CHART_FILE="${{ steps.chart-info.outputs.name }}-${{ steps.chart-info.outputs.version }}.tgz"
-          echo "package-path=/tmp/charts/$CHART_FILE" >> $GITHUB_OUTPUT
+          echo "package-path=/tmp/charts/$CHART_FILE" >> "$GITHUB_OUTPUT"
           echo "Packaged: $CHART_FILE"
 
       - name: Generate chart provenance
@@ -215,7 +217,7 @@ jobs:
           # Extract digest from push output
           DIGEST=$(grep -oP 'Digest: \K[a-f0-9]+' push-output.log || echo "")
           if [ -n "$DIGEST" ]; then
-            echo "digest=sha256:$DIGEST" >> $GITHUB_OUTPUT
+            echo "digest=sha256:$DIGEST" >> "$GITHUB_OUTPUT"
             echo "Chart digest: sha256:$DIGEST"
           fi
 

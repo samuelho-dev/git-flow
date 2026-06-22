@@ -1,0 +1,100 @@
+name: 'Terraform Validate'
+
+# Cloud-free preflight: fmt + init(-backend=false) + validate + optional Trivy IaC
+# scan. Needs no AWS credentials, so it is safe to run on every PR.
+
+on:
+  workflow_call:
+    inputs:
+      terraform-path:
+        description: 'Directory containing the Terraform configuration to validate'
+        required: true
+        type: string
+      terraform-version:
+        description: 'Terraform version (exact, range, or "latest")'
+        required: false
+        type: string
+        default: 'latest'
+      format-check:
+        description: 'Fail when files are not `terraform fmt`-clean'
+        required: false
+        type: boolean
+        default: true
+      security-scan:
+        description: 'Run a Trivy IaC (config) scan over the Terraform'
+        required: false
+        type: boolean
+        default: true
+      severity:
+        description: 'Trivy severities to report for the security scan'
+        required: false
+        type: string
+        default: 'HIGH,CRITICAL'
+      runs-on:
+        description: 'Runner label to execute the job on'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+    outputs:
+      result:
+        description: 'Validate result (success|failure)'
+        value: ${{ jobs.validate.outputs.result }}
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Terraform Validate
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.terraform-path }}
+    outputs:
+      result: ${{ steps.done.outputs.result }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3 # Renovate pins to SHA
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          terraform_wrapper: false
+
+      - name: Terraform fmt
+        if: inputs.format-check
+        run: terraform fmt -check -recursive -diff
+
+      - name: Terraform init (no backend)
+        run: terraform init -backend=false -input=false
+
+      - name: Terraform validate
+        run: terraform validate -no-color
+
+      - name: Trivy IaC scan
+        if: inputs.security-scan
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
+        with:
+          scan-type: 'config'
+          scan-ref: ${{ inputs.terraform-path }}
+          severity: ${{ inputs.severity }}
+          exit-code: '0'
+          version: 'v0.69.3'
+
+      - name: Record result
+        id: done
+        if: always()
+        run: echo "result=${{ job.status }}" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## 🌍 Terraform Validate"
+            echo ""
+            echo "**Path:** \`${{ inputs.terraform-path }}\`"
+            echo "**Version:** \`${{ inputs.terraform-version }}\`"
+            echo "**Result:** \`${{ job.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
