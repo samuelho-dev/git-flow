@@ -35,6 +35,11 @@ on:
         required: false
         type: string
         default: ''
+      checkout-ref:
+        description: 'Git ref to checkout before applying (default: the triggering SHA). Useful when an earlier job commits desired terraform inputs to a branch, then this apply should run against that updated ref.'
+        required: false
+        type: string
+        default: ''
       runs-on:
         description: 'Runner label to execute the job on'
         required: false
@@ -67,6 +72,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4 # Renovate pins to SHA

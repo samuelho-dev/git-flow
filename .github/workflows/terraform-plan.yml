@@ -26,6 +26,11 @@ on:
         required: false
         type: string
         default: ''
+      checkout-ref:
+        description: 'Git ref to checkout before planning (default: the triggering SHA). Useful when an earlier job commits desired terraform inputs to a branch, then this plan should run against that updated ref.'
+        required: false
+        type: string
+        default: ''
       aws-region:
         description: 'AWS region for provider/backend'
         required: false
@@ -43,6 +48,11 @@ on:
         default: true
       cost-estimation:
         description: 'Run Infracost on the plan (requires infracost-api-key secret)'
+        required: false
+        type: boolean
+        default: false
+      allow-destroys:
+        description: 'Allow resources to be destroyed by this plan. false = fail after planning if any destroy/replace is present (artifacts still upload).'
         required: false
         type: boolean
         default: false
@@ -65,6 +75,12 @@ on:
       plan-artifact-name:
         description: 'Name of the uploaded plan artifact'
         value: ${{ inputs.plan-artifact-name }}
+      destroy-count:
+        description: 'Number of resources this plan would destroy (including replacements)'
+        value: ${{ jobs.plan.outputs.destroy-count }}
+      has-destroys:
+        description: 'true when the plan includes any delete/delete-create/create-delete actions'
+        value: ${{ jobs.plan.outputs.has-destroys }}
 
 permissions:
   contents: read
@@ -83,9 +99,13 @@ jobs:
       AWS_ROLE_ARN: ${{ secrets.aws-role-arn }}
     outputs:
       has-changes: ${{ steps.plan.outputs.has-changes }}
+      destroy-count: ${{ steps.analyze.outputs.destroy-count }}
+      has-destroys: ${{ steps.analyze.outputs.has-destroys }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
 
       - name: Configure AWS credentials
         if: env.AWS_ROLE_ARN != ''
@@ -128,6 +148,23 @@ jobs:
             2) echo "has-changes=true"  >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::terraform plan failed (exit $code)"; exit "$code" ;;
           esac
+      - name: Analyze plan actions
+        id: analyze
+        run: |
+          set -euo pipefail
+          terraform show -json tfplan > plan.json
+          python3 - <<'PY'
+          import json, os
+          plan = json.load(open('plan.json'))
+          destroys = 0
+          for rc in plan.get('resource_changes', []):
+              acts = rc.get('change', {}).get('actions', [])
+              if 'delete' in acts:
+                  destroys += 1
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              out.write(f'destroy-count={destroys}\n')
+              out.write(f'has-destroys={"true" if destroys > 0 else "false"}\n')
+          PY
 
       - name: Upload plan artifact
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -136,6 +173,7 @@ jobs:
           path: |
             ${{ inputs.terraform-path }}/tfplan
             ${{ inputs.terraform-path }}/plan.txt
+            ${{ inputs.terraform-path }}/plan.json
           retention-days: 5
           if-no-files-found: error
 
@@ -157,12 +195,19 @@ jobs:
           fi
           infracost "${args[@]}"
 
+      - name: Guard destroys
+        if: steps.analyze.outputs.destroy-count != '0' && !inputs.allow-destroys
+        run: |
+          echo "::error::terraform plan includes ${{ steps.analyze.outputs.destroy-count }} destroy actions; set allow-destroys=true only for intentional deletions"
+          exit 1
+
       - name: Post plan to PR
         if: ${{ inputs.post-pr-comment && github.event_name == 'pull_request' }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           TF_PATH: ${{ inputs.terraform-path }}
           HAS_CHANGES: ${{ steps.plan.outputs.has-changes }}
+          DESTROY_COUNT: ${{ steps.analyze.outputs.destroy-count }}
         with:
           script: |
             const fs = require('fs')
@@ -174,7 +219,7 @@ jobs:
             const body = [
               `### 🌍 Terraform Plan — \`${tfPath}\``,
               '',
-              `Changes: \`${process.env.HAS_CHANGES}\``,
+              `Changes: \`${process.env.HAS_CHANGES}\`  ·  Destroys: \`${process.env.DESTROY_COUNT}\``,
               '',
               '<details><summary>Show plan</summary>',
               '',
@@ -200,4 +245,5 @@ jobs:
             echo "**Path:** \`${{ inputs.terraform-path }}\`"
             echo "**Var file:** \`${{ inputs.var-file || 'none' }}\`"
             echo "**Has changes:** \`${{ steps.plan.outputs.has-changes }}\`"
+            echo "**Destroy count:** \`${{ steps.analyze.outputs.destroy-count }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
