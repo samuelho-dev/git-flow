@@ -77,7 +77,7 @@ jobs:
         working-directory: ${{ inputs.chart-path }}
     env:
       REGISTRY_USERNAME: ${{ secrets.registry-username || github.actor }}
-      REGISTRY_PASSWORD: ${{ secrets.registry-password || secrets.GITHUB_TOKEN }}
+      REGISTRY_PASSWORD: ${{ secrets.registry-password || github.token }}
       VALUES_FILES: ${{ inputs.values-files }}
       LINT_STRICT: ${{ inputs.lint-strict }}
     outputs:
