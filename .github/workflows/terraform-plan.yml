@@ -68,6 +68,12 @@ on:
       infracost-api-key:
         description: 'Infracost API key (only used when cost-estimation=true)'
         required: false
+      cloudflare-api-key:
+        description: 'Cloudflare Global API Key (optional; required only when the terraform uses the Cloudflare provider)'
+        required: false
+      cloudflare-email:
+        description: 'Cloudflare API Email (optional; required only when the terraform uses the Cloudflare provider)'
+        required: false
     outputs:
       has-changes:
         description: 'true when the plan contains changes'
@@ -81,7 +87,6 @@ on:
       has-destroys:
         description: 'true when the plan includes any delete/delete-create/create-delete actions'
         value: ${{ jobs.plan.outputs.has-destroys }}
-
 permissions:
   contents: read
   id-token: write
@@ -97,6 +102,8 @@ jobs:
         working-directory: ${{ inputs.terraform-path }}
     env:
       AWS_ROLE_ARN: ${{ secrets.aws-role-arn }}
+      CLOUDFLARE_API_KEY: ${{ secrets.cloudflare-api-key }}
+      CLOUDFLARE_EMAIL: ${{ secrets.cloudflare-email }}
     outputs:
       has-changes: ${{ steps.plan.outputs.has-changes }}
       destroy-count: ${{ steps.analyze.outputs.destroy-count }}

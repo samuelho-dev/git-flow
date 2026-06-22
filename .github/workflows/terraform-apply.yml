@@ -49,6 +49,12 @@ on:
       aws-role-arn:
         description: 'IAM role ARN to assume via GitHub OIDC'
         required: true
+      cloudflare-api-key:
+        description: 'Cloudflare Global API Key (optional; required only when the terraform uses the Cloudflare provider)'
+        required: false
+      cloudflare-email:
+        description: 'Cloudflare API Email (optional; required only when the terraform uses the Cloudflare provider)'
+        required: false
     outputs:
       applied:
         description: 'true when the apply completed successfully'
@@ -67,6 +73,9 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.terraform-path }}
+    env:
+      CLOUDFLARE_API_KEY: ${{ secrets.cloudflare-api-key }}
+      CLOUDFLARE_EMAIL: ${{ secrets.cloudflare-email }}
     outputs:
       applied: ${{ steps.apply.outputs.applied }}
     steps:
