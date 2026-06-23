@@ -68,7 +68,14 @@ jobs:
         run: terraform fmt -check -recursive -diff
 
       - name: Terraform init (no backend)
-        run: terraform init -backend=false -input=false
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            terraform init -backend=false -input=false && exit 0
+            echo "::warning::terraform init failed (attempt $attempt/3); retrying"
+            sleep $((attempt * 10))
+          done
+          terraform init -backend=false -input=false
 
       - name: Terraform validate
         run: terraform validate -no-color

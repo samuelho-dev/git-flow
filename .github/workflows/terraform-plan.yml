@@ -134,6 +134,11 @@ jobs:
           set -euo pipefail
           args=(-input=false)
           if [ -n "$BACKEND_CONFIG" ]; then args+=("-backend-config=$BACKEND_CONFIG"); fi
+          for attempt in 1 2 3; do
+            terraform init "${args[@]}" && exit 0
+            echo "::warning::terraform init failed (attempt $attempt/3); retrying"
+            sleep $((attempt * 10))
+          done
           terraform init "${args[@]}"
 
       - name: Terraform plan
