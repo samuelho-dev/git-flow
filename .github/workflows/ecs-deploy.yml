@@ -60,13 +60,13 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4 # Renovate pins to SHA
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
         with:
           role-to-assume: ${{ secrets.aws-role-arn }}
           aws-region: ${{ inputs.aws-region }}
 
       - name: Deploy to ECS Express Mode
-        uses: aws-actions/amazon-ecs-deploy-express-service@v1 # Renovate pins to SHA
+        uses: aws-actions/amazon-ecs-deploy-express-service@0031dcb4ccb40afd21a881c59c5e7e276c30c0a5 # v1.2.2
         with:
           service-name: ${{ inputs.service-name }}
           image: ${{ inputs.image }}
