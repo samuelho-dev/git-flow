@@ -9,7 +9,7 @@ on:
   workflow_call:
     inputs:
       url:
-        description: 'Base URL of the service (e.g. https://api.creativetoolkits.com)'
+        description: 'Base URL of the service (e.g. https://api.example.com)'
         required: true
         type: string
       path:
@@ -100,7 +100,7 @@ jobs:
           def probe():
               sep = "&" if urllib.parse.urlsplit(url).query else "?"
               probe_url = f"{url}{sep}ci_probe={time.time_ns()}"
-              req = urllib.request.Request(probe_url, headers={"Cache-Control": "no-cache", "User-Agent": "creativetoolkits-ci-smoke/1.0"})
+              req = urllib.request.Request(probe_url, headers={"Cache-Control": "no-cache", "User-Agent": "git-flow-service-smoke/1.0"})
               try:
                   with urllib.request.urlopen(req, timeout=10) as resp:
                       code, body = resp.status, resp.read().decode("utf-8")
