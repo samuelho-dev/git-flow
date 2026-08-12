@@ -84,6 +84,13 @@ on:
       registry-password:
         description: 'Registry password/token'
         required: false
+      build-secrets:
+        description: >-
+          BuildKit secrets as `id=value`, one per line, exposed to the build via
+          `RUN --mount=type=secret,id=<id>`. Use this for credentials a build must
+          read: `build-args` are recoverable from image history, mounted secrets
+          are not written to any layer.
+        required: false
     outputs:
       digest:
         description: 'Image digest (sha256:...)'
@@ -171,6 +178,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: ${{ steps.build-args.outputs.args }}
+          secrets: ${{ secrets.build-secrets }}
           cache-from: ${{ inputs.cache-registry && format('type=registry,ref={0}/{1}/{2}:buildcache', inputs.registry, github.repository_owner, inputs.image) || 'type=gha' }}
           # mode=min: export only the final image's layers. mode=max re-packs and
           # writes every intermediate stage (the fat builder node_modules / nx build
