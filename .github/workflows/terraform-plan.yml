@@ -68,11 +68,8 @@ on:
       infracost-api-key:
         description: 'Infracost API key (only used when cost-estimation=true)'
         required: false
-      cloudflare-api-key:
-        description: 'Cloudflare Global API Key (optional; required only when the terraform uses the Cloudflare provider)'
-        required: false
-      cloudflare-email:
-        description: 'Cloudflare API Email (optional; required only when the terraform uses the Cloudflare provider)'
+      cloudflare-api-token:
+        description: 'Scoped Cloudflare API token (optional; required only when Terraform uses Cloudflare)'
         required: false
     outputs:
       has-changes:
@@ -102,8 +99,7 @@ jobs:
         working-directory: ${{ inputs.terraform-path }}
     env:
       AWS_ROLE_ARN: ${{ secrets.aws-role-arn }}
-      CLOUDFLARE_API_KEY: ${{ secrets.cloudflare-api-key }}
-      CLOUDFLARE_EMAIL: ${{ secrets.cloudflare-email }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.cloudflare-api-token }}
     outputs:
       has-changes: ${{ steps.plan.outputs.has-changes }}
       destroy-count: ${{ steps.analyze.outputs.destroy-count }}
