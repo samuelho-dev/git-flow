@@ -182,11 +182,11 @@ jobs:
           PLAN_KEY: ${{ inputs.plan-storage-key }}
         run: |
           if ! env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
-            s3 rm "s3://$PLAN_BUCKET/$PLAN_KEY" --no-progress; then
+            s3 rm "s3://$PLAN_BUCKET/$PLAN_KEY"; then
             echo "::warning::failed to delete object-store plan archive"
           fi
           if ! env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
-            s3 rm "s3://$PLAN_BUCKET/$PLAN_KEY.sha256" --no-progress; then
+            s3 rm "s3://$PLAN_BUCKET/$PLAN_KEY.sha256"; then
             echo "::warning::failed to delete object-store plan archive checksum"
           fi
 
