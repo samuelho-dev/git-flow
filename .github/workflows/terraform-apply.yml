@@ -1,8 +1,8 @@
 name: 'Terraform Apply'
 
-# Applies a saved plan produced by terraform-plan. Downloads the plan artifact,
-# re-inits, and applies it. Pair with a GitHub `environment` for required
-# reviewers on production applies.
+# Applies a saved plan produced by terraform-plan. Retrieves the plan from
+# GitHub artifacts or an S3-compatible object store, re-inits, and applies it.
+# Pair with a GitHub `environment` for required reviewers on production applies.
 
 on:
   workflow_call:
@@ -15,6 +15,21 @@ on:
         description: 'Plan artifact name produced by terraform-plan'
         required: true
         type: string
+      plan-storage-endpoint:
+        description: 'S3-compatible endpoint for the plan archive; empty uses GitHub artifacts'
+        required: false
+        type: string
+        default: ''
+      plan-storage-bucket:
+        description: 'Bucket containing the plan archive'
+        required: false
+        type: string
+        default: ''
+      plan-storage-key:
+        description: 'Attempt-scoped object key containing the plan archive'
+        required: false
+        type: string
+        default: ''
       terraform-version:
         description: 'Terraform version (must match the version that produced the plan)'
         required: false
@@ -51,6 +66,12 @@ on:
         required: true
       cloudflare-api-token:
         description: 'Scoped Cloudflare API token (optional; required only when Terraform uses Cloudflare)'
+        required: false
+      plan-storage-access-key-id:
+        description: 'Access key for the S3-compatible plan store'
+        required: false
+      plan-storage-secret-access-key:
+        description: 'Secret key for the S3-compatible plan store'
         required: false
     outputs:
       applied:
@@ -93,10 +114,33 @@ jobs:
           terraform_wrapper: false
 
       - name: Download plan artifact
+        if: inputs.plan-storage-endpoint == ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ inputs.plan-artifact-name }}
           path: ${{ inputs.terraform-path }}
+
+      - name: Download plan from object storage
+        if: inputs.plan-storage-endpoint != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.plan-storage-access-key-id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.plan-storage-secret-access-key }}
+          PLAN_ENDPOINT: ${{ inputs.plan-storage-endpoint }}
+          PLAN_BUCKET: ${{ inputs.plan-storage-bucket }}
+          PLAN_KEY: ${{ inputs.plan-storage-key }}
+        run: |
+          set -euo pipefail
+          : "${AWS_ACCESS_KEY_ID:?missing plan storage access key}"
+          : "${AWS_SECRET_ACCESS_KEY:?missing plan storage secret key}"
+          : "${PLAN_BUCKET:?missing plan storage bucket}"
+          : "${PLAN_KEY:?missing plan storage key}"
+          archive="$RUNNER_TEMP/terraform-plan.tar.gz"
+          env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
+            s3 cp "s3://$PLAN_BUCKET/$PLAN_KEY" "$archive" --no-progress
+          env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
+            s3 cp "s3://$PLAN_BUCKET/$PLAN_KEY.sha256" "$archive.sha256" --no-progress
+          (cd "$RUNNER_TEMP" && sha256sum --check terraform-plan.tar.gz.sha256)
+          tar -xzf "$archive"
 
       - name: Terraform init
         env:
@@ -118,6 +162,21 @@ jobs:
           set -euo pipefail
           terraform apply -input=false -no-color tfplan
           echo "applied=true" >> "$GITHUB_OUTPUT"
+
+      - name: Delete plan from object storage
+        if: always() && inputs.plan-storage-endpoint != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.plan-storage-access-key-id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.plan-storage-secret-access-key }}
+          PLAN_ENDPOINT: ${{ inputs.plan-storage-endpoint }}
+          PLAN_BUCKET: ${{ inputs.plan-storage-bucket }}
+          PLAN_KEY: ${{ inputs.plan-storage-key }}
+        run: |
+          set -euo pipefail
+          env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
+            s3 rm "s3://$PLAN_BUCKET/$PLAN_KEY" --no-progress
+          env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
+            s3 rm "s3://$PLAN_BUCKET/$PLAN_KEY.sha256" --no-progress
 
       - name: Summary
         if: always()
