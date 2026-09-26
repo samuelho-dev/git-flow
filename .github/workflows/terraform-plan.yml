@@ -1,8 +1,8 @@
 name: 'Terraform Plan'
 
-# Runs `terraform plan` against real cloud state via GitHub OIDC, uploads the
-# binary plan as an artifact (consumed by terraform-apply), and optionally posts
-# the plan to the PR and estimates cost with Infracost.
+# Runs `terraform plan` against real cloud state, saves the binary plan for
+# terraform-apply, and optionally posts the plan to the PR and estimates cost.
+# Plans use GitHub artifacts unless an S3-compatible object store is configured.
 
 on:
   workflow_call:
@@ -41,6 +41,21 @@ on:
         required: false
         type: string
         default: 'tfplan'
+      plan-storage-endpoint:
+        description: 'S3-compatible endpoint for the plan archive; empty uses GitHub artifacts'
+        required: false
+        type: string
+        default: ''
+      plan-storage-bucket:
+        description: 'Bucket for the plan archive when plan-storage-endpoint is set'
+        required: false
+        type: string
+        default: ''
+      plan-storage-key:
+        description: 'Attempt-scoped object key for the plan archive when plan-storage-endpoint is set'
+        required: false
+        type: string
+        default: ''
       post-pr-comment:
         description: 'Post the plan to the PR as a comment (PR events only)'
         required: false
@@ -70,6 +85,12 @@ on:
         required: false
       cloudflare-api-token:
         description: 'Scoped Cloudflare API token (optional; required only when Terraform uses Cloudflare)'
+        required: false
+      plan-storage-access-key-id:
+        description: 'Access key for the S3-compatible plan store'
+        required: false
+      plan-storage-secret-access-key:
+        description: 'Secret key for the S3-compatible plan store'
         required: false
     outputs:
       has-changes:
@@ -175,6 +196,7 @@ jobs:
           PY
 
       - name: Upload plan artifact
+        if: inputs.plan-storage-endpoint == ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.plan-artifact-name }}
@@ -184,6 +206,28 @@ jobs:
             ${{ inputs.terraform-path }}/plan.json
           retention-days: 5
           if-no-files-found: error
+
+      - name: Upload plan to object storage
+        if: inputs.plan-storage-endpoint != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.plan-storage-access-key-id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.plan-storage-secret-access-key }}
+          PLAN_ENDPOINT: ${{ inputs.plan-storage-endpoint }}
+          PLAN_BUCKET: ${{ inputs.plan-storage-bucket }}
+          PLAN_KEY: ${{ inputs.plan-storage-key }}
+        run: |
+          set -euo pipefail
+          : "${AWS_ACCESS_KEY_ID:?missing plan storage access key}"
+          : "${AWS_SECRET_ACCESS_KEY:?missing plan storage secret key}"
+          : "${PLAN_BUCKET:?missing plan storage bucket}"
+          : "${PLAN_KEY:?missing plan storage key}"
+          archive="$RUNNER_TEMP/terraform-plan.tar.gz"
+          tar -czf "$archive" tfplan plan.txt plan.json
+          (cd "$RUNNER_TEMP" && sha256sum terraform-plan.tar.gz >terraform-plan.tar.gz.sha256)
+          env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
+            s3 cp "$archive" "s3://$PLAN_BUCKET/$PLAN_KEY" --no-progress
+          env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
+            s3 cp "$archive.sha256" "s3://$PLAN_BUCKET/$PLAN_KEY.sha256" --no-progress
 
       - name: Set up Infracost
         if: inputs.cost-estimation
