@@ -99,6 +99,9 @@ on:
       plan-artifact-name:
         description: 'Name of the uploaded plan artifact'
         value: ${{ inputs.plan-artifact-name }}
+      plan-sha256:
+        description: 'SHA-256 of the archive uploaded to object storage; empty for GitHub artifacts'
+        value: ${{ jobs.plan.outputs.plan-sha256 }}
       destroy-count:
         description: 'Number of resources this plan would destroy (including replacements)'
         value: ${{ jobs.plan.outputs.destroy-count }}
@@ -123,6 +126,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.cloudflare-api-token }}
     outputs:
       has-changes: ${{ steps.plan.outputs.has-changes }}
+      plan-sha256: ${{ steps.upload-plan.outputs.plan-sha256 }}
       destroy-count: ${{ steps.analyze.outputs.destroy-count }}
       has-destroys: ${{ steps.analyze.outputs.has-destroys }}
     steps:
@@ -208,6 +212,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload plan to object storage
+        id: upload-plan
         if: inputs.plan-storage-endpoint != ''
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.plan-storage-access-key-id }}
@@ -223,11 +228,13 @@ jobs:
           : "${PLAN_KEY:?missing plan storage key}"
           archive="$RUNNER_TEMP/terraform-plan.tar.gz"
           tar -czf "$archive" tfplan plan.txt plan.json
-          (cd "$RUNNER_TEMP" && sha256sum terraform-plan.tar.gz >terraform-plan.tar.gz.sha256)
+          plan_sha256="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          printf '%s  terraform-plan.tar.gz\n' "$plan_sha256" > "$archive.sha256"
           env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
             s3 cp "$archive" "s3://$PLAN_BUCKET/$PLAN_KEY" --no-progress
           env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
             s3 cp "$archive.sha256" "s3://$PLAN_BUCKET/$PLAN_KEY.sha256" --no-progress
+          echo "plan-sha256=$plan_sha256" >> "$GITHUB_OUTPUT"
 
       - name: Set up Infracost
         if: inputs.cost-estimation

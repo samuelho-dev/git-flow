@@ -30,6 +30,11 @@ on:
         required: false
         type: string
         default: ''
+      plan-storage-sha256:
+        description: 'SHA-256 from terraform-plan for the object-store archive'
+        required: false
+        type: string
+        default: ''
       terraform-version:
         description: 'Terraform version (must match the version that produced the plan)'
         required: false
@@ -128,18 +133,22 @@ jobs:
           PLAN_ENDPOINT: ${{ inputs.plan-storage-endpoint }}
           PLAN_BUCKET: ${{ inputs.plan-storage-bucket }}
           PLAN_KEY: ${{ inputs.plan-storage-key }}
+          PLAN_SHA256: ${{ inputs.plan-storage-sha256 }}
         run: |
           set -euo pipefail
           : "${AWS_ACCESS_KEY_ID:?missing plan storage access key}"
           : "${AWS_SECRET_ACCESS_KEY:?missing plan storage secret key}"
           : "${PLAN_BUCKET:?missing plan storage bucket}"
           : "${PLAN_KEY:?missing plan storage key}"
+          : "${PLAN_SHA256:?missing plan storage SHA-256}"
           archive="$RUNNER_TEMP/terraform-plan.tar.gz"
           env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
             s3 cp "s3://$PLAN_BUCKET/$PLAN_KEY" "$archive" --no-progress
-          env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
-            s3 cp "s3://$PLAN_BUCKET/$PLAN_KEY.sha256" "$archive.sha256" --no-progress
-          (cd "$RUNNER_TEMP" && sha256sum --check terraform-plan.tar.gz.sha256)
+          actual_sha256="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          if [ "$actual_sha256" != "$PLAN_SHA256" ]; then
+            echo "::error::downloaded plan archive SHA-256 does not match plan-storage-sha256"
+            exit 1
+          fi
           tar -xzf "$archive"
 
       - name: Terraform init
@@ -172,11 +181,14 @@ jobs:
           PLAN_BUCKET: ${{ inputs.plan-storage-bucket }}
           PLAN_KEY: ${{ inputs.plan-storage-key }}
         run: |
-          set -euo pipefail
-          env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
-            s3 rm "s3://$PLAN_BUCKET/$PLAN_KEY" --no-progress
-          env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
-            s3 rm "s3://$PLAN_BUCKET/$PLAN_KEY.sha256" --no-progress
+          if ! env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
+            s3 rm "s3://$PLAN_BUCKET/$PLAN_KEY" --no-progress; then
+            echo "::warning::failed to delete object-store plan archive"
+          fi
+          if ! env -u AWS_SESSION_TOKEN aws --endpoint-url "$PLAN_ENDPOINT" --region garage \
+            s3 rm "s3://$PLAN_BUCKET/$PLAN_KEY.sha256" --no-progress; then
+            echo "::warning::failed to delete object-store plan archive checksum"
+          fi
 
       - name: Summary
         if: always()
