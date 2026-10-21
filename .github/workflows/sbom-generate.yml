@@ -62,6 +62,7 @@ permissions:
   contents: write
   packages: read
   security-events: write
+  id-token: write
 
 jobs:
   generate:
@@ -96,10 +97,18 @@ jobs:
           image: ${{ inputs.target-type == 'image' && inputs.target || '' }}
           format: ${{ inputs.format }}
           output-file: ${{ inputs.output-file }}
-          upload-artifact: ${{ inputs.upload-artifact }}
+          upload-artifact: false
           upload-release-assets: false
-          artifact-name: sbom-${{ inputs.format }}
           dependency-snapshot: ${{ inputs.upload-dependency-snapshot && inputs.format == 'spdx-json' }}
+
+      - name: Upload SBOM artifact
+        if: inputs.upload-artifact
+        uses: samuelho-dev/git-flow/.github/actions/garage-artifact@22cc84b335661459e753f538cdc5f826c2cdc9b3
+        with:
+          operation: upload
+          name: sbom-${{ inputs.format }}
+          path: ${{ inputs.output-file }}
+          if-no-files-found: error
 
       - name: Scan SBOM for vulnerabilities
         if: inputs.scan-sbom

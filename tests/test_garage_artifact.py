@@ -28,10 +28,20 @@ class ArtifactTest(unittest.TestCase):
             old = Path.cwd()
             os.chdir(root)
             try:
-                names = artifact.artifact_names('apps/desktop/release/*/*/*\n!**/*.zip')
+                names = artifact.artifact_names('apps/desktop/release/*/*/*')
+                self.assertEqual(sorted(name for _, name in names),
+                                 ['linux/x64/app.deb', 'macos/arm64/app.zip'])
+                archive = root / 'multi.tar.gz'
+                with tarfile.open(archive, 'w:gz') as tar:
+                    for file, name in names:
+                        tar.add(file, arcname=name)
+                artifact.safe_extract(archive, root / 'restored')
+                self.assertEqual((root / 'restored/linux/x64/app.deb').read_bytes(), b'file')
+                self.assertEqual((root / 'restored/macos/arm64/app.zip').read_bytes(), b'file')
+                self.assertEqual([name for _, name in artifact.artifact_names(
+                    'apps/desktop/release/*/*/*\n!**/*.zip')], ['linux/x64/app.deb'])
             finally:
                 os.chdir(old)
-            self.assertEqual([name for _, name in names], ['linux/x64/app.deb'])
 
     def test_rejects_archive_traversal_and_symlink_parent(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -299,7 +299,7 @@ Generate Software Bill of Materials (SBOM) for supply chain security.
 | `target` | string | `.` | Target to scan |
 | `format` | string | `spdx-json` | SBOM format (spdx-json, cyclonedx-json) |
 | `output-file` | string | `sbom.spdx.json` | Output file name |
-| `upload-artifact` | boolean | `true` | Upload SBOM as artifact |
+| `upload-artifact` | boolean | `true` | Upload SBOM to attempt-scoped Garage CI artifacts (seven-day lifecycle) |
 | `upload-dependency-snapshot` | boolean | `true` | Upload to GitHub Dependency Graph |
 | `scan-sbom` | boolean | `true` | Scan SBOM for vulnerabilities |
 
