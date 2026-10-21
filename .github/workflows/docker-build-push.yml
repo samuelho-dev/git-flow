@@ -107,8 +107,10 @@ permissions:
   packages: write
   id-token: write
   security-events: write
-  actions: write  # Required for artifact upload in SBOM generation
+  actions: write  # Required by upload-sarif on some GitHub configurations
 
+env:
+  DOCKER_BUILD_RECORD_UPLOAD: 'false'
 jobs:
   build:
     name: Build & Push Docker Image
@@ -231,11 +233,11 @@ jobs:
 
       - name: Upload SBOM as artifact
         if: inputs.sbom
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: samuelho-dev/git-flow/.github/actions/garage-artifact@main
         with:
+          operation: upload
           name: sbom-${{ inputs.image }}
           path: sbom.spdx.json
-          retention-days: 30
 
       - name: Install Cosign
         if: inputs.sign

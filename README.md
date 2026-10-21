@@ -72,6 +72,7 @@ Production-grade, vetted GitHub Actions workflows for Kubernetes GitOps infrastr
 |--------|-------------|--------|
 | [`setup-node-pnpm`](actions/setup-node-pnpm/action.yml) | Setup Node.js with pnpm and caching | ✅ Ready |
 | [`setup-kubernetes-tools`](actions/setup-kubernetes-tools/action.yml) | Install kubectl, Helm, ArgoCD, Cosign | ✅ Ready |
+| [`garage-artifact`](.github/actions/garage-artifact/action.yml) | Attempt-scoped Garage artifact upload/download via GitHub OIDC (seven-day CI, thirty-day trusted recovery evidence) | ✅ Ready |
 
 ## 🚀 Quick Start
 

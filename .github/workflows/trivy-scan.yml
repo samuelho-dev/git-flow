@@ -64,6 +64,7 @@ on:
 permissions:
   contents: read
   security-events: write
+  id-token: write
 
 jobs:
   scan:
@@ -117,11 +118,11 @@ jobs:
 
       - name: Upload scan results as artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: samuelho-dev/git-flow/.github/actions/garage-artifact@main
         with:
+          operation: upload
           name: trivy-results-${{ inputs.scan-type }}
           path: trivy-results.*
-          retention-days: 30
 
       - name: Generate scan summary
         if: always()

@@ -1,0 +1,77 @@
+name: Garage CI artifact
+description: Upload or download attempt-scoped artifacts without GitHub artifact storage
+inputs:
+  operation:
+    description: upload or download
+    required: true
+  name:
+    description: Artifact name; omit for all artifacts on download
+    required: false
+    default: ''
+  path:
+    description: Upload paths (newline-separated globs) or download destination
+    required: true
+  pattern:
+    description: Glob of artifact names to download
+    required: false
+    default: ''
+  merge-multiple:
+    description: Extract multiple artifacts into the same destination
+    required: false
+    default: 'false'
+  if-no-files-found:
+    description: Upload behavior when no files match (warn, ignore, error)
+    required: false
+    default: warn
+  include-hidden-files:
+    description: Include hidden files on upload
+    required: false
+    default: 'false'
+  run-id:
+    description: Source run ID (download only; defaults to current run)
+    required: false
+    default: ''
+  run-attempt:
+    description: Source run attempt (download only; required with run-id)
+    required: false
+    default: ''
+  purpose:
+    description: ci (7-day artifacts) or recovery (30-day trusted audio recovery evidence)
+    required: false
+    default: ci
+  broker-url:
+    description: Presign endpoint override for runner-specific routing
+    required: false
+    default: ''
+  expected-digest:
+    description: Required SHA-256 digest of downloaded archive (single artifact)
+    required: false
+    default: ''
+outputs:
+  artifact-digest:
+    description: SHA-256 of uploaded archive, or of single downloaded archive
+    value: ${{ steps.transfer.outputs.artifact-digest }}
+runs:
+  using: composite
+  steps:
+    - id: transfer
+      shell: bash
+      env:
+        GARAGE_OPERATION: ${{ inputs.operation }}
+        GARAGE_NAME: ${{ inputs.name }}
+        GARAGE_PATH: ${{ inputs.path }}
+        GARAGE_PATTERN: ${{ inputs.pattern }}
+        GARAGE_MERGE: ${{ inputs.merge-multiple }}
+        GARAGE_MISSING: ${{ inputs.if-no-files-found }}
+        GARAGE_HIDDEN: ${{ inputs.include-hidden-files }}
+        GARAGE_RUN_ID: ${{ inputs.run-id }}
+        GARAGE_RUN_ATTEMPT: ${{ inputs.run-attempt }}
+        GARAGE_EXPECTED_DIGEST: ${{ inputs.expected-digest }}
+        GARAGE_PURPOSE: ${{ inputs.purpose }}
+        GARAGE_BROKER_URL: ${{ inputs.broker-url }}
+      run: |
+        if command -v python3 >/dev/null 2>&1; then
+          python3 "${{ github.action_path }}/artifact.py"
+        else
+          python "${{ github.action_path }}/artifact.py"
+        fi
