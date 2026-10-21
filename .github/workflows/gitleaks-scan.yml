@@ -108,7 +108,7 @@ jobs:
 
       - name: Upload scan results as artifact
         if: always()
-        uses: samuelho-dev/git-flow/.github/actions/garage-artifact@main
+        uses: samuelho-dev/git-flow/.github/actions/garage-artifact@22cc84b335661459e753f538cdc5f826c2cdc9b3
         with:
           operation: upload
           name: gitleaks-results
