@@ -128,7 +128,7 @@ def safe_extract(archive, destination):
         for member in members:
             path = PurePosixPath(member.name)
             if (not member.name or path.as_posix() == '.' or path.is_absolute() or '..' in path.parts
-                    or any(c in member.name for c in '\\\\:\\x00') or not (
+                    or any(c in member.name for c in ('\\', ':', '\x00')) or not (
                         member.isfile() or member.isdir() or member.issym()) or path.as_posix() in names):
                 raise ValueError('Unsafe archive entry')
             names.add(path.as_posix())
