@@ -103,7 +103,7 @@ jobs:
 
       - name: Upload SBOM artifact
         if: inputs.upload-artifact
-        uses: samuelho-dev/git-flow/.github/actions/garage-artifact@22cc84b335661459e753f538cdc5f826c2cdc9b3
+        uses: samuelho-dev/git-flow/.github/actions/garage-artifact@138626296f2cb6170f6ce3506a8e7c8b060c53c6
         with:
           operation: upload
           name: sbom-${{ inputs.format }}
