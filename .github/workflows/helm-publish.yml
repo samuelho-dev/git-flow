@@ -306,7 +306,7 @@ jobs:
           prerelease: false
 
       - name: Upload chart artifacts
-        uses: samuelho-dev/git-flow/.github/actions/garage-artifact@946f6e689e49a30e02362c6e69ed94fc17fd129d
+        uses: samuelho-dev/git-flow/.github/actions/garage-artifact@1c4d9a46c69f129217c88a3fce5e84e9dfd9ef2e
         with:
           operation: upload
           name: helm-chart-${{ steps.chart-info.outputs.name }}-${{ steps.chart-info.outputs.version }}
