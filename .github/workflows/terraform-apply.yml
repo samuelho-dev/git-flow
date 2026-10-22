@@ -116,7 +116,7 @@ jobs:
 
       - name: Download plan artifact
         id: download-plan
-        uses: samuelho-dev/git-flow/.github/actions/garage-artifact@138626296f2cb6170f6ce3506a8e7c8b060c53c6
+        uses: samuelho-dev/git-flow/.github/actions/garage-artifact@64ccf35b05b2a0683f467d5f35d137ce8a5f510a
         with:
           operation: download
           name: ${{ inputs.plan-artifact-name }}
