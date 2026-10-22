@@ -5,17 +5,19 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/**'
+      - '.github/actions/garage-artifact/**'
       - 'tests/**'
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/**'
+      - '.github/actions/garage-artifact/**'
       - 'tests/**'
 
 jobs:
   test-workflow-outputs:
     name: Test Docker Workflow Outputs
-    runs-on: ubuntu-latest
+    runs-on: homelab-runners
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -23,3 +25,6 @@ jobs:
         run: |
           chmod +x tests/test-docker-workflow-outputs.sh
           ./tests/test-docker-workflow-outputs.sh
+
+      - name: Test Garage artifact client
+        run: python3 -m unittest discover -s tests -p 'test_garage_artifact.py'
