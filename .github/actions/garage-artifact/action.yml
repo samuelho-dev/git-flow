@@ -1,18 +1,19 @@
 name: Garage CI artifact
-description: Upload or download attempt-scoped artifacts without GitHub artifact storage
+description: Upload, download, or link attempt-scoped artifacts without GitHub artifact storage
 inputs:
   operation:
-    description: upload or download
+    description: upload, download, or link
     required: true
   name:
-    description: Artifact name; omit for all artifacts on download
+    description: Artifact name; omit to select by pattern on download or link
     required: false
     default: ''
   path:
-    description: Upload paths (newline-separated globs) or download destination
-    required: true
+    description: Upload paths (newline-separated globs) or download destination; unused for link
+    required: false
+    default: ''
   pattern:
-    description: Glob of artifact names to download
+    description: Glob of artifact names to download or link
     required: false
     default: ''
   merge-multiple:
@@ -28,11 +29,11 @@ inputs:
     required: false
     default: 'false'
   run-id:
-    description: Source run ID (download only; defaults to current run)
+    description: Source run ID (download/link; defaults to current run)
     required: false
     default: ''
   run-attempt:
-    description: Source run attempt (download only; required with run-id)
+    description: Source run attempt (download/link; required with run-id)
     required: false
     default: ''
   purpose:
