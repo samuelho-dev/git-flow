@@ -109,7 +109,7 @@ jobs:
         env:
           PLAN_SHA256: ${{ inputs.plan-sha256 }}
         run: |
-          if [[ ! \"$PLAN_SHA256\" =~ ^[a-f0-9]{64}$ ]]; then
+          if [[ ! "$PLAN_SHA256" =~ ^[a-f0-9]{64}$ ]]; then
             echo '::error::plan-sha256 must be the qualified plan archive SHA-256'
             exit 1
           fi
