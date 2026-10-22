@@ -39,8 +39,8 @@ inputs:
     description: ci (7-day artifacts) or recovery (30-day trusted audio recovery evidence)
     required: false
     default: ci
-  broker-url:
-    description: Presign endpoint override for runner-specific routing
+  network:
+    description: cluster or tailnet; empty selects cluster on Linux and tailnet elsewhere
     required: false
     default: ''
   expected-digest:
@@ -68,7 +68,7 @@ runs:
         GARAGE_RUN_ATTEMPT: ${{ inputs.run-attempt }}
         GARAGE_EXPECTED_DIGEST: ${{ inputs.expected-digest }}
         GARAGE_PURPOSE: ${{ inputs.purpose }}
-        GARAGE_BROKER_URL: ${{ inputs.broker-url }}
+        GARAGE_NETWORK: ${{ inputs.network }}
       run: |
         if command -v python3 >/dev/null 2>&1; then
           python3 "${{ github.action_path }}/artifact.py"

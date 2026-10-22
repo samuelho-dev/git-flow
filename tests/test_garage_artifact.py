@@ -93,6 +93,21 @@ class ArtifactTest(unittest.TestCase):
             artifact.safe_extract(archive, destination)
             self.assertEqual((destination / 'second').read_bytes(), b'x')
 
+    def test_linux_native_selects_tailnet_for_broker_and_signed_url(self):
+        with patch.dict(os.environ, {
+            'RUNNER_OS': 'Linux', 'GARAGE_NETWORK': 'tailnet',
+            'ACTIONS_ID_TOKEN_REQUEST_URL': 'https://actions.invalid/token',
+            'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'ephemeral',
+        }), patch.object(artifact, 'request_json', side_effect=[
+            {'value': 'oidc'}, {'url': 'https://garage.invalid/file', 'headers': {}}
+        ]) as request:
+            artifact.presign('put', name='release')
+            self.assertEqual(request.call_args.args[0], artifact.BROKERS['tailnet'])
+            self.assertTrue(request.call_args.args[1]['tailnet'])
+        with patch.dict(os.environ, {'GARAGE_NETWORK': 'invalid'}):
+            with self.assertRaisesRegex(ValueError, 'Invalid artifact network'):
+                artifact.presign('put', name='release')
+
     def test_checksum_mismatch_never_extracts(self):
         with tempfile.TemporaryDirectory() as folder:
             class Response(io.BytesIO):

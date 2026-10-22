@@ -16,9 +16,8 @@ import xml.etree.ElementTree as ET
 
 AUDIENCE = 'garage-ci-artifacts'
 BROKERS = {
-    'Linux': 'http://nx-cache.nx-cache.svc.cluster.local:3000/artifacts/presign',
-    'macOS': 'https://nx-cache.taile99f5b.ts.net/artifacts/presign',
-    'Windows': 'https://nx-cache.taile99f5b.ts.net/artifacts/presign',
+    'cluster': 'http://nx-cache.nx-cache.svc.cluster.local:3000/artifacts/presign',
+    'tailnet': 'https://nx-cache.taile99f5b.ts.net/artifacts/presign',
 }
 CHUNK = 1024 * 1024
 
@@ -31,14 +30,18 @@ def request_json(url, payload=None, headers=None):
 
 
 def presign(operation, **options):
+    network = os.environ.get('GARAGE_NETWORK') or (
+        'cluster' if os.environ.get('RUNNER_OS', 'Linux') == 'Linux' else 'tailnet')
+    if network not in BROKERS:
+        raise ValueError('Invalid artifact network')
     token_url = os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']
     separator = '&' if '?' in token_url else '?'
     oidc = request_json(token_url + separator + urllib.parse.urlencode({'audience': AUDIENCE}),
                         headers={'Authorization': 'Bearer ' + os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})['value']
     payload = {'operation': operation, 'purpose': os.environ.get('GARAGE_PURPOSE', 'ci'),
-               'tailnet': os.environ.get('RUNNER_OS', 'Linux') != 'Linux'}
+               'tailnet': network == 'tailnet'}
     payload.update({key: value for key, value in options.items() if value is not None})
-    return request_json(os.environ.get('GARAGE_BROKER_URL') or BROKERS[os.environ.get('RUNNER_OS', 'Linux')],
+    return request_json(BROKERS[network],
                         payload, {'Authorization': 'Bearer ' + oidc, 'Content-Type': 'application/json'})
 
 

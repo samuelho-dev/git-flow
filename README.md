@@ -74,6 +74,11 @@ Production-grade, vetted GitHub Actions workflows for Kubernetes GitOps infrastr
 | [`setup-kubernetes-tools`](actions/setup-kubernetes-tools/action.yml) | Install kubectl, Helm, ArgoCD, Cosign | ✅ Ready |
 | [`garage-artifact`](.github/actions/garage-artifact/action.yml) | Attempt-scoped Garage artifact upload/download via GitHub OIDC (seven-day CI, thirty-day trusted recovery evidence) | ✅ Ready |
 
+The Garage action uses the in-cluster broker on Linux by default and the
+Tailnet broker on macOS/Windows. Set `network: tailnet` on Linux runners
+outside Kubernetes (including native ARM64 and containerized Debian jobs);
+the same choice selects the signed Garage URL.
+
 ## 🚀 Quick Start
 
 ### Prerequisites
