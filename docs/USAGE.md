@@ -299,7 +299,7 @@ Generate Software Bill of Materials (SBOM) for supply chain security.
 | `target` | string | `.` | Target to scan |
 | `format` | string | `spdx-json` | SBOM format (spdx-json, cyclonedx-json) |
 | `output-file` | string | `sbom.spdx.json` | Output file name |
-| `upload-artifact` | boolean | `true` | Upload SBOM as artifact |
+| `upload-artifact` | boolean | `true` | Upload SBOM to attempt-scoped Garage CI artifacts (seven-day lifecycle) |
 | `upload-dependency-snapshot` | boolean | `true` | Upload to GitHub Dependency Graph |
 | `scan-sbom` | boolean | `true` | Scan SBOM for vulnerabilities |
 
@@ -534,7 +534,7 @@ jobs:
 
 ### `terraform-plan.yml`
 
-Generate a Terraform plan and post a summary comment on the PR. Uses GitHub OIDC (`id-token: write`) for AWS authentication — no static credentials required.
+Generate a Terraform plan and post a summary comment on the PR. Plans are stored in the repository's seven-day Garage CI artifact bucket, scoped to the run and attempt; GitHub OIDC (`id-token: write`) authorizes access without static storage credentials.
 
 #### Inputs
 
@@ -561,6 +561,7 @@ Generate a Terraform plan and post a summary comment on the PR. Uses GitHub OIDC
 |--------|-------------|
 | `has-changes` | `true` if the plan contains infrastructure changes |
 | `plan-artifact-name` | Name of the uploaded plan artifact |
+| `plan-sha256` | SHA-256 of the archived plan; pass this to `terraform-apply.yml` |
 
 #### Examples
 
@@ -601,7 +602,7 @@ jobs:
 
 ### `terraform-apply.yml`
 
-Download the plan artifact produced by `terraform-plan.yml` and apply it. Pair with a GitHub `environment` for a required-reviewer approval gate before production applies.
+Download and verify the archived plan produced by `terraform-plan.yml` before extracting or applying it. Pair with a GitHub `environment` for a required-reviewer approval gate before production applies.
 
 #### Inputs
 
@@ -609,6 +610,8 @@ Download the plan artifact produced by `terraform-plan.yml` and apply it. Pair w
 |-------|------|---------|-------------|
 | `terraform-path` | string | **required** | Path to Terraform directory |
 | `plan-artifact-name` | string | **required** | Name of the plan artifact to download and apply |
+| `plan-sha256` | string | **required** | Qualified plan archive digest from the plan job |
+| `plan-run-id` / `plan-run-attempt` | string | `''` | Both required when applying from another run (trusted default-branch workflow only) |
 | `terraform-version` | string | `latest` | Terraform version |
 | `aws-region` | string | `us-west-2` | AWS region |
 | `environment` | string | `''` | GitHub environment name for approval gate |
@@ -646,6 +649,7 @@ jobs:
     with:
       terraform-path: terraform/environments/prod
       plan-artifact-name: ${{ needs.plan.outputs.plan-artifact-name }}
+      plan-sha256: ${{ needs.plan.outputs.plan-sha256 }}
       environment: production
     secrets:
       aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
