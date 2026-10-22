@@ -61,6 +61,38 @@ class ArtifactTest(unittest.TestCase):
                     artifact.safe_extract(archive, destination)
                 self.assertFalse(destination.exists())
 
+    def test_symlink_graph_cannot_escape_or_cycle(self):
+        with tempfile.TemporaryDirectory() as folder:
+            archive = Path(folder) / 'links.tar.gz'
+            for links in ({'d/up': '..', 'escape': 'd/up/..'},
+                          {'a': 'b', 'b': 'a'}):
+                with tarfile.open(archive, 'w:gz') as tar:
+                    directory = tarfile.TarInfo('d')
+                    directory.type = tarfile.DIRTYPE
+                    tar.addfile(directory)
+                    for name, linkname in links.items():
+                        entry = tarfile.TarInfo(name)
+                        entry.type = tarfile.SYMTYPE
+                        entry.linkname = linkname
+                        tar.addfile(entry)
+                destination = Path(folder) / 'unsafe'
+                with self.assertRaises(ValueError):
+                    artifact.safe_extract(archive, destination)
+                self.assertFalse(destination.exists())
+
+            with tarfile.open(archive, 'w:gz') as tar:
+                file = tarfile.TarInfo('release0')
+                file.size = 1
+                tar.addfile(file, io.BytesIO(b'x'))
+                for name, linkname in {'first': 'release0', 'second': 'first'}.items():
+                    entry = tarfile.TarInfo(name)
+                    entry.type = tarfile.SYMTYPE
+                    entry.linkname = linkname
+                    tar.addfile(entry)
+            destination = Path(folder) / 'valid'
+            artifact.safe_extract(archive, destination)
+            self.assertEqual((destination / 'second').read_bytes(), b'x')
+
     def test_checksum_mismatch_never_extracts(self):
         with tempfile.TemporaryDirectory() as folder:
             class Response(io.BytesIO):

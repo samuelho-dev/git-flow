@@ -124,7 +124,7 @@ def safe_extract(archive, destination):
     with tarfile.open(archive, 'r:gz') as tar:
         members = tar.getmembers()
         names = set()
-        links = set()
+        links = {}
         for member in members:
             path = PurePosixPath(member.name)
             if (not member.name or path.as_posix() == '.' or path.is_absolute() or '..' in path.parts
@@ -136,13 +136,36 @@ def safe_extract(archive, destination):
             if not target.is_relative_to(destination) or any(p.is_symlink() for p in (target, *target.parents) if p != destination):
                 raise ValueError('Unsafe extraction destination')
             if member.issym():
-                link = (target.parent / member.linkname).resolve(strict=False)
-                if not link.is_relative_to(destination) or os.path.isabs(member.linkname):
+                if (PurePosixPath(member.linkname).is_absolute()
+                        or any(c in member.linkname for c in ('\\', ':', '\x00'))):
                     raise ValueError('Archive symlink escapes destination')
-                links.add(path.as_posix())
+                links[path.as_posix()] = member.linkname
         if any(any(PurePosixPath(name).is_relative_to(PurePosixPath(link)) and name != link
                    for link in links) for name in names):
             raise ValueError('Archive member beneath symlink')
+        # Resolve the complete archive graph, not just links already on disk.
+        # A later link can change where an earlier link's '..' lands.
+        for name, linkname in links.items():
+            parts = list(PurePosixPath(name).parts[:-1])
+            pending = list(PurePosixPath(linkname).parts)
+            seen = {name}
+            while pending:
+                part = pending.pop(0)
+                if part == '..':
+                    if not parts:
+                        raise ValueError('Archive symlink escapes destination')
+                    parts.pop()
+                elif part != '.':
+                    candidate = '/'.join((*parts, part))
+                    if candidate in links:
+                        if candidate in seen:
+                            raise ValueError('Archive symlink cycle')
+                        seen.add(candidate)
+                        pending[:0] = PurePosixPath(links[candidate]).parts
+                    else:
+                        parts.append(part)
+            if not destination.joinpath(*parts).resolve(strict=False).is_relative_to(destination):
+                raise ValueError('Archive symlink escapes destination')
         destination.mkdir(parents=True, exist_ok=True)
         for member in members:
             target = destination.joinpath(*PurePosixPath(member.name).parts)
