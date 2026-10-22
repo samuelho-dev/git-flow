@@ -72,12 +72,20 @@ Production-grade, vetted GitHub Actions workflows for Kubernetes GitOps infrastr
 |--------|-------------|--------|
 | [`setup-node-pnpm`](actions/setup-node-pnpm/action.yml) | Setup Node.js with pnpm and caching | ✅ Ready |
 | [`setup-kubernetes-tools`](actions/setup-kubernetes-tools/action.yml) | Install kubectl, Helm, ArgoCD, Cosign | ✅ Ready |
-| [`garage-artifact`](.github/actions/garage-artifact/action.yml) | Attempt-scoped Garage artifact upload/download via GitHub OIDC (seven-day CI, thirty-day trusted recovery evidence) | ✅ Ready |
+| [`garage-artifact`](.github/actions/garage-artifact/action.yml) | Attempt-scoped Garage artifact upload/download and private browser links via GitHub OIDC (seven-day CI, thirty-day trusted recovery evidence) | ✅ Ready |
 
 The Garage action uses the in-cluster broker on Linux by default and the
 Tailnet broker on macOS/Windows. Set `network: tailnet` on Linux runners
 outside Kubernetes (including native ARM64 and containerized Debian jobs);
-the same choice selects the signed Garage URL.
+the same choice selects the signed Garage URL for upload/download.
+
+For human retrieval, use `operation: link` in a trusted main-branch workflow
+with `id-token: write`, specifying `run-id` **and** `run-attempt` plus either
+`name` or `pattern`. It lists artifacts through the runner's existing broker
+and writes five-minute Tailnet GET links to the private run step summary only;
+`path` is unused. Open the links while connected to Tailnet to download the
+`.tar.gz` archives. No object URL or token is printed to the job log, and the
+broker permits past-run reads only from trusted main workflows.
 
 ## 🚀 Quick Start
 

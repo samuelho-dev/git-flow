@@ -242,6 +242,26 @@ def download(name, path, pattern='', merge=False, run_id=None, run_attempt=None,
                     output.write(f'artifact-digest={sha.hexdigest()}\n')
 
 
+def link(name, pattern='', run_id=None, run_attempt=None):
+    run_id = run_id or os.environ['GITHUB_RUN_ID']
+    run_attempt = run_attempt or os.environ['GITHUB_RUN_ATTEMPT']
+    names = [item for item in list_names(run_id, run_attempt)
+             if item == name or (not name and (not pattern or fnmatch.fnmatchcase(item, pattern)))]
+    if not names:
+        raise ValueError('No artifacts matched requested name/pattern')
+    links = []
+    for item in names:
+        signed = presign('get', name=item, runId=run_id, runAttempt=run_attempt, tailnet=True)
+        if signed['headers']:
+            raise ValueError('Artifact GET requires browser-incompatible headers')
+        label = item.replace('\\', '\\\\').replace('[', '\\[').replace(']', '\\]')
+        links.append(f'- [{label}]({signed["url"]})')
+    with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+        summary.write(f'### Garage artifacts — run {run_id}, attempt {run_attempt}\n\n'
+                      'Links expire in five minutes. Open from Tailnet; each download is a .tar.gz archive.\n\n'
+                      + '\n'.join(links) + '\n')
+
+
 def main():
     env = os.environ
     operation = env['GARAGE_OPERATION']
@@ -255,12 +275,16 @@ def main():
         if missing not in ('warn', 'ignore', 'error'):
             raise ValueError('Invalid if-no-files-found value')
         upload(name, env['GARAGE_PATH'], missing, env.get('GARAGE_HIDDEN') == 'true')
-    elif operation == 'download':
+    elif operation in ('download', 'link'):
         if env.get('GARAGE_RUN_ID') and not env.get('GARAGE_RUN_ATTEMPT'):
             raise ValueError('Explicit run-id requires explicit run-attempt')
-        download(name, env['GARAGE_PATH'], env.get('GARAGE_PATTERN', ''), env.get('GARAGE_MERGE') == 'true',
-                 env.get('GARAGE_RUN_ID') or None, env.get('GARAGE_RUN_ATTEMPT') or None,
-                 env.get('GARAGE_EXPECTED_DIGEST', ''))
+        if operation == 'link':
+            link(name, env.get('GARAGE_PATTERN', ''),
+                 env.get('GARAGE_RUN_ID') or None, env.get('GARAGE_RUN_ATTEMPT') or None)
+        else:
+            download(name, env['GARAGE_PATH'], env.get('GARAGE_PATTERN', ''), env.get('GARAGE_MERGE') == 'true',
+                     env.get('GARAGE_RUN_ID') or None, env.get('GARAGE_RUN_ATTEMPT') or None,
+                     env.get('GARAGE_EXPECTED_DIGEST', ''))
     else:
         raise ValueError('Invalid operation')
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run with python3 -m unittest discover -s tests -p 'test_garage_artifact.py'."""
+from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
 import io
 import os
@@ -122,6 +123,44 @@ class ArtifactTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
                     artifact.download('plan', Path(folder) / 'output')
             self.assertFalse((Path(folder) / 'output').exists())
+
+    def test_link_keeps_urls_private_and_rejects_browser_headers(self):
+        url = 'https://garage.tailnet.invalid/archive?X-Amz-Signature=secret'
+        listing = (b'<ListBucketResult><Contents><Key>runs/42/2/storybook-results.tar.gz</Key></Contents>'
+                   b'<Contents><Key>runs/42/2/other.tar.gz</Key></Contents></ListBucketResult>')
+        with tempfile.TemporaryDirectory() as folder:
+            summary = Path(folder) / 'summary'
+            for headers in ({}, {'x-required': 'browser-cannot-send-this'}):
+                summary.write_text('')
+                requests = []
+
+                def broker(endpoint, payload=None, headers=None):
+                    if payload is None:
+                        return {'value': 'oidc'}
+                    requests.append((endpoint, payload))
+                    return {'url': 'http://garage.internal.invalid/list', 'headers': {}} if payload['operation'] == 'list' else {'url': url, 'headers': headers_for_get}
+
+                headers_for_get = headers
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with patch.dict(os.environ, {
+                    'RUNNER_OS': 'Linux', 'GARAGE_OPERATION': 'link', 'GARAGE_PATTERN': 'storybook-*',
+                    'GARAGE_NAME': '', 'GARAGE_RUN_ID': '42', 'GARAGE_RUN_ATTEMPT': '2',
+                    'GITHUB_STEP_SUMMARY': str(summary), 'ACTIONS_ID_TOKEN_REQUEST_URL': 'https://actions.invalid/token',
+                    'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'ephemeral',
+                }), patch.object(artifact, 'request_json', side_effect=broker), \
+                     patch.object(artifact.urllib.request, 'urlopen', return_value=io.BytesIO(listing)), \
+                     redirect_stdout(stdout), redirect_stderr(stderr):
+                    if headers:
+                        with self.assertRaisesRegex(ValueError, 'browser-incompatible headers'):
+                            artifact.main()
+                    else:
+                        artifact.main()
+                self.assertNotIn(url, stdout.getvalue() + stderr.getvalue())
+                self.assertEqual(url in summary.read_text(), not bool(headers))
+                self.assertEqual([call[1]['operation'] for call in requests], ['list', 'get'])
+                self.assertEqual([call[1]['tailnet'] for call in requests], [False, True])
+                self.assertEqual(requests[1][1]['name'], 'storybook-results')
+
 
 
 if __name__ == '__main__':
