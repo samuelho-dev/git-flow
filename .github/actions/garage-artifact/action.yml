@@ -43,6 +43,10 @@ inputs:
     description: cluster or tailnet; empty selects cluster on Linux and tailnet elsewhere
     required: false
     default: ''
+  broker-url:
+    description: Presign endpoint override for a locally controlled broker
+    required: false
+    default: ''
   expected-digest:
     description: Required SHA-256 digest of downloaded archive (single artifact)
     required: false
@@ -69,6 +73,7 @@ runs:
         GARAGE_EXPECTED_DIGEST: ${{ inputs.expected-digest }}
         GARAGE_PURPOSE: ${{ inputs.purpose }}
         GARAGE_NETWORK: ${{ inputs.network }}
+        GARAGE_BROKER_URL: ${{ inputs.broker-url }}
       run: |
         if command -v python3 >/dev/null 2>&1; then
           python3 "${{ github.action_path }}/artifact.py"

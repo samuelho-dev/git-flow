@@ -41,7 +41,7 @@ def presign(operation, **options):
     payload = {'operation': operation, 'purpose': os.environ.get('GARAGE_PURPOSE', 'ci'),
                'tailnet': network == 'tailnet'}
     payload.update({key: value for key, value in options.items() if value is not None})
-    return request_json(BROKERS[network],
+    return request_json(os.environ.get('GARAGE_BROKER_URL') or BROKERS[network],
                         payload, {'Authorization': 'Bearer ' + oidc, 'Content-Type': 'application/json'})
 
 
