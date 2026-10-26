@@ -2,6 +2,7 @@ name: 'Terraform Plan'
 
 # Runs `terraform plan` against real cloud state and saves the binary plan
 # in the attempt-scoped CI artifact bucket for terraform-apply.
+# Opt-in read diagnostics expose only allowlisted native RPC metadata, without a saved plan.
 
 on:
   workflow_call:
@@ -55,6 +56,11 @@ on:
         required: false
         type: boolean
         default: false
+      read-diagnostics:
+        description: 'Observe native read-RPC metadata only; do not save or publish a plan'
+        required: false
+        type: boolean
+        default: false
       runs-on:
         description: 'Runner label to execute the job on'
         required: false
@@ -75,8 +81,8 @@ on:
         description: 'true when the plan contains changes'
         value: ${{ jobs.plan.outputs.has-changes }}
       plan-artifact-name:
-        description: 'Name of the uploaded plan artifact'
-        value: ${{ inputs.plan-artifact-name }}
+        description: 'Name of the uploaded plan artifact; empty in read-diagnostics mode'
+        value: ${{ !inputs.read-diagnostics && inputs.plan-artifact-name || '' }}
       plan-sha256:
         description: 'SHA-256 of the uploaded plan archive'
         value: ${{ jobs.plan.outputs.plan-sha256 }}
@@ -144,8 +150,203 @@ jobs:
         id: plan
         env:
           VAR_FILE: ${{ inputs.var-file }}
+          READ_DIAGNOSTICS: ${{ inputs.read-diagnostics }}
         run: |
           set -euo pipefail
+          if [ "$READ_DIAGNOSTICS" = true ]; then
+            python3 - <<'PY_READ_DIAGNOSTICS'
+          import datetime
+          import hashlib
+          import json
+          import os
+          import re
+          import signal
+          import subprocess
+          import sys
+          import time
+
+          # Native messages/fields: terraform-plugin-go v0.31.0, protocols 5/6.
+          # Terraform v1.15.8/go-plugin v1.7.0 forwards these fields as JSON.
+          PROVIDERS = {
+              'registry.terraform.io/hashicorp/aws': 'AWS',
+              'registry.terraform.io/cloudflare/cloudflare': 'CLOUDFLARE',
+              'registry.terraform.io/hashicorp/tls': 'TLS',
+              'registry.terraform.io/hashicorp/archive': 'ARCHIVE',
+          }
+          RPCS = {
+              'GetMetadata': ('NONE', ()),
+              'GetProviderSchema': ('NONE', ()),
+              'GetResourceIdentitySchemas': ('NONE', ()),
+              'PrepareProviderConfig': ('NONE', ()),
+              'ValidateProviderConfig': ('NONE', ()),
+              'Configure': ('NONE', ()),
+              'ConfigureProvider': ('NONE', ()),
+              'Stop': ('NONE', ()),
+              'StopProvider': ('NONE', ()),
+              'GetFunctions': ('NONE', ()),
+              'CallFunction': ('NONE', ()),
+              'ValidateDataSourceConfig': ('DATA_SOURCE', ('tf_data_source_type',)),
+              'ValidateDataResourceConfig': ('DATA_SOURCE', ('tf_data_source_type',)),
+              'ReadDataSource': ('DATA_SOURCE', ('tf_data_source_type',)),
+              'ValidateResourceTypeConfig': ('RESOURCE', ('tf_resource_type',)),
+              'ValidateResourceConfig': ('RESOURCE', ('tf_resource_type',)),
+              'UpgradeResourceState': ('RESOURCE', ('tf_resource_type',)),
+              'UpgradeResourceIdentity': ('RESOURCE', ('tf_resource_type',)),
+              'ReadResource': ('RESOURCE', ('tf_resource_type',)),
+              'PlanResourceChange': ('RESOURCE', ('tf_resource_type',)),
+              'ImportResourceState': ('RESOURCE', ('tf_resource_type',)),
+              'MoveResourceState': ('RESOURCE', ('tf_resource_type',)),
+              'GenerateResourceConfig': ('RESOURCE', ('tf_resource_type',)),
+              'ValidateEphemeralResourceConfig': ('EPHEMERAL_RESOURCE', ('tf_ephemeral_resource_type',)),
+              'OpenEphemeralResource': ('EPHEMERAL_RESOURCE', ('tf_ephemeral_resource_type',)),
+              'RenewEphemeralResource': ('EPHEMERAL_RESOURCE', ('tf_ephemeral_resource_type',)),
+              'CloseEphemeralResource': ('EPHEMERAL_RESOURCE', ('tf_ephemeral_resource_type',)),
+              'ValidateListResourceConfig': ('RESOURCE', ('tf_resource_type', 'tf_list_resource_type')),
+              'ListResource': ('RESOURCE', ('tf_list_resource_type',)),
+              'ValidateActionConfig': ('ACTION', ('tf_action_type',)),
+              'PlanAction': ('ACTION', ('tf_action_type',)),
+              'ValidateStateStoreConfig': ('STATE_STORE', ('tf_state_store_type',)),
+              'ConfigureStateStore': ('STATE_STORE', ('tf_state_store_type',)),
+              'ReadStateBytes': ('STATE_STORE', ('tf_state_store_type',)),
+              'GetStates': ('STATE_STORE', ('tf_state_store_type',)),
+              'LockState': ('STATE_STORE', ('tf_state_store_type',)),
+              'UnlockState': ('STATE_STORE', ('tf_state_store_type',)),
+          }
+          BOUNDARIES = {'Received request': 'RPC_BEGIN', 'Served request': 'RPC_END'}
+          UUID = re.compile(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z')
+
+          def emit(record):
+              print(json.dumps(record, separators=(',', ':')), flush=True)
+
+          def unique_object(pairs):
+              result = {}
+              for key, value in pairs:
+                  if key in result:
+                      raise ValueError()
+                  result[key] = value
+              return result
+
+          def observe(command):
+              # Child-only changes: no inherited native trace-file/protocol-data sinks
+              # or implicit CLI arguments that could add an output file.
+              env = {key: value for key, value in os.environ.items()
+                     if not key.startswith(('TF_LOG', 'TF_CLI_ARGS'))
+                     and key not in ('TF_GRAPH_TRACE', 'TF_REATTACH_PROVIDERS',
+                                     'GITHUB_OUTPUT', 'GITHUB_STEP_SUMMARY',
+                                     'GITHUB_ENV', 'GITHUB_PATH')}
+              env.update(TF_LOG='JSON', TF_LOG_SDK_PROTO='TRACE', TF_INPUT='0')
+              pending, begins, ends = {}, 0, 0
+              process = None
+              try:
+                  process = subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL,
+                                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                             start_new_session=True)
+                  discard = False
+                  while line := process.stdout.readline(65537):
+                      if discard or len(line) > 65536:
+                          discard = not line.endswith(b'\n')
+                          continue
+                      try:
+                          record = json.loads(line, object_pairs_hook=unique_object)
+                          if not isinstance(record, dict):
+                              continue
+                          keys = ('@level', '@message', '@timestamp', 'tf_provider_addr', 'tf_rpc', 'tf_req_id')
+                          if any(not isinstance(record.get(key), str) for key in keys):
+                              continue
+                          if record['@level'] != 'trace':
+                              continue
+                          provider = PROVIDERS.get(record['tf_provider_addr'])
+                          rpc = RPCS.get(record['tf_rpc'])
+                          boundary = BOUNDARIES.get(record['@message'])
+                          request_id = record['tf_req_id']
+                          if not provider or not rpc or not boundary or not UUID.fullmatch(request_id):
+                              continue
+                          types = [record[key] for key in rpc[1] if key in record]
+                          if rpc[1] and (not types or any(not isinstance(value, str)
+                                  or not value or len(value) > 256 for value in types)):
+                              continue
+                          if len(types) > 1 and any(value != types[0] for value in types[1:]):
+                              continue
+                          timestamp = datetime.datetime.fromisoformat(
+                              record['@timestamp'].replace('Z', '+00:00'))
+                          if timestamp.tzinfo is None:
+                              continue
+                          at_ms = int(timestamp.timestamp() * 1000)
+                          request = hashlib.sha256(request_id.encode()).hexdigest()
+                          type_hash = hashlib.sha256(types[0].encode()).hexdigest() if types else None
+                      except (ValueError, TypeError, OverflowError, RecursionError):
+                          continue
+                      identity = (provider, rpc[0], type_hash, record['tf_rpc'])
+                      safe = dict(event=boundary, provider=provider, type_kind=rpc[0],
+                                  type_sha256=type_hash, rpc=record['tf_rpc'],
+                                  request_sha256=request, at_ms=at_ms)
+                      if boundary == 'RPC_BEGIN':
+                          if request in pending:
+                              continue
+                          if len(pending) >= 4096:
+                              raise ValueError()
+                          pending[request] = (identity, at_ms)
+                          begins += 1
+                      else:
+                          start = pending.get(request)
+                          if start is None or start[0] != identity or at_ms < start[1]:
+                              continue
+                          safe['elapsed_ms'] = at_ms - start[1]
+                          del pending[request]
+                          ends += 1
+                      emit(safe)
+                  code = process.wait()
+                  emit(dict(event='READ_RPC_SUMMARY',
+                            observation='OBSERVED' if begins else 'UNVERIFIED',
+                            begins=begins, ends=ends, pending=len(pending), exit_code=code))
+                  return 0 if code in (0, 2) and begins and not pending else 1
+              except (Exception, KeyboardInterrupt):
+                  # Never expose exception messages, stacks, child bytes, or parsed input.
+                  emit(dict(event='READ_RPC_ERROR', reason='CHILD_OR_OBSERVER_FAILURE'))
+                  return 1
+              finally:
+                  if process is not None:
+                      # returncode is set only by our completed wait above. Otherwise
+                      # keep the leader unreaped so its PID/PGID cannot be reused.
+                      if process.returncode is None:
+                          try:
+                              os.kill(process.pid, signal.SIGINT)
+                          except ProcessLookupError:
+                              process.wait()
+                          else:
+                              deadline = time.monotonic() + 5
+                              while time.monotonic() < deadline:
+                                  if os.waitid(os.P_PID, process.pid,
+                                               os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None:
+                                      break
+                                  time.sleep(0.05)
+                              try:
+                                  os.killpg(process.pid, signal.SIGKILL)
+                              except ProcessLookupError:
+                                  pass
+                              process.wait()
+                      process.stdout.close()
+
+          def main():
+              command = ['terraform', 'plan', '-input=false', '-no-color', '-detailed-exitcode']
+              if os.environ.get('VAR_FILE'):
+                  command.append('-var-file=' + os.environ['VAR_FILE'])
+              return observe(command)
+
+          def interrupted(_signal, _frame):
+              raise KeyboardInterrupt()
+
+          if __name__ == '__main__':
+              try:
+                  signal.signal(signal.SIGTERM, interrupted)
+                  code = main()
+              except (Exception, KeyboardInterrupt):
+                  emit(dict(event='READ_RPC_ERROR', reason='OBSERVER_FAILURE'))
+                  code = 1
+              raise SystemExit(code)
+          PY_READ_DIAGNOSTICS
+            exit $?
+          fi
           args=(-input=false -no-color -detailed-exitcode -out=tfplan)
           if [ -n "$VAR_FILE" ]; then
             args+=("-var-file=$VAR_FILE")
@@ -161,6 +362,7 @@ jobs:
           esac
       - name: Analyze plan actions
         id: analyze
+        if: ${{ !inputs.read-diagnostics }}
         run: |
           set -euo pipefail
           terraform show -json tfplan > plan.json
@@ -179,6 +381,7 @@ jobs:
 
       - name: Upload plan artifact
         id: upload-plan
+        if: ${{ !inputs.read-diagnostics }}
         uses: samuelho-dev/git-flow/.github/actions/garage-artifact@1c4d9a46c69f129217c88a3fce5e84e9dfd9ef2e
         with:
           operation: upload
@@ -190,13 +393,13 @@ jobs:
           if-no-files-found: error
 
       - name: Set up Infracost
-        if: inputs.cost-estimation
+        if: ${{ !inputs.read-diagnostics && inputs.cost-estimation }}
         uses: infracost/actions/setup@fb736a8f219195d6efdca58682069b16fe1bc280 # v4.2.0
         with:
           api-key: ${{ secrets.infracost-api-key }}
 
       - name: Infracost breakdown
-        if: inputs.cost-estimation
+        if: ${{ !inputs.read-diagnostics && inputs.cost-estimation }}
         env:
           VAR_FILE: ${{ inputs.var-file }}
         run: |
@@ -208,13 +411,13 @@ jobs:
           infracost "${args[@]}"
 
       - name: Guard destroys
-        if: steps.analyze.outputs.destroy-count != '0' && !inputs.allow-destroys
+        if: ${{ !inputs.read-diagnostics && steps.analyze.outputs.destroy-count != '0' && !inputs.allow-destroys }}
         run: |
           echo "::error::terraform plan includes ${{ steps.analyze.outputs.destroy-count }} destroy actions; set allow-destroys=true only for intentional deletions"
           exit 1
 
       - name: Post plan to PR
-        if: ${{ inputs.post-pr-comment && github.event_name == 'pull_request' }}
+        if: ${{ !inputs.read-diagnostics && inputs.post-pr-comment && github.event_name == 'pull_request' }}
         uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
         env:
           TF_PATH: ${{ inputs.terraform-path }}
@@ -249,7 +452,7 @@ jobs:
             })
 
       - name: Summary
-        if: always()
+        if: ${{ always() && !inputs.read-diagnostics }}
         run: |
           {
             echo "## 🌍 Terraform Plan"
