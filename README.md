@@ -47,6 +47,24 @@ Production-grade, vetted GitHub Actions workflows for Kubernetes GitOps infrastr
 | [`terraform-plan.yml`](.github/workflows/terraform-plan.yml) | Plan via OIDC, plan artifact, PR comment, optional Infracost | ✅ Ready |
 | [`terraform-apply.yml`](.github/workflows/terraform-apply.yml) | Apply a saved plan artifact, optional environment gate | ✅ Ready |
 
+`terraform-plan.yml` defaults to the saved-plan path above. Its opt-in
+`read-diagnostics: true` mode is for an explicitly authorized **plan-only** caller:
+native Terraform JSON logs enter a private child pipe, and only finite provider,
+RPC and type-kind enums, hashed native request/type identifiers, and log timestamps
+leave it. Concrete resource names, messages, HTTP data, and other fields are discarded.
+The protocol allowlist follows Terraform 1.15.8 / terraform-plugin-go 0.31.0
+[native RPC handlers](https://github.com/hashicorp/terraform-plugin-go/blob/v0.31.0/tfprotov6/tf6server/server.go).
+`RPC_END` means the handler completed, **not** that its cloud request succeeded;
+elapsed times are JSON-log timestamp deltas, not individual cloud-API latency.
+Missing records are `UNVERIFIED`, and unmatched native starts remain pending.
+The diagnostic child disables inherited native trace-file and implicit CLI-output
+settings; setup-terraform's wrapper remains disabled. This mode saves no plan and
+skips plan analysis, artifact upload, cost output, PR comments and the ordinary summary.
+It does not authorize a run, change the read-only role, or add an apply/maintenance path.
+Its synthetic child-pipe privacy regression runs with
+`python3 -m unittest discover -s tests -p 'test_terraform_plan_diagnostics.py'`;
+that fixture is **not** evidence of an observed Terraform or cloud RPC.
+
 ### Deployment Workflows
 
 | Workflow | Description | Status |
