@@ -16,6 +16,11 @@ on:
         required: false
         type: string
         default: 'latest'
+      terraform-cli-config:
+        description: 'Terraform CLI config preinstalled on the runner (sets TF_CLI_CONFIG_FILE); skips setup-terraform and requires the preinstalled binary to equal terraform-version exactly'
+        required: false
+        type: string
+        default: ''
       var-file:
         description: 'Path to a .tfvars file, relative to terraform-path'
         required: false
@@ -108,6 +113,7 @@ jobs:
     env:
       AWS_ROLE_ARN: ${{ secrets.aws-role-arn }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.cloudflare-api-token }}
+      TF_CLI_CONFIG_FILE: ${{ inputs.terraform-cli-config }}
     outputs:
       has-changes: ${{ steps.plan.outputs.has-changes }}
       plan-sha256: ${{ steps.upload-plan.outputs.artifact-digest }}
@@ -127,10 +133,17 @@ jobs:
           aws-region: ${{ inputs.aws-region }}
 
       - name: Set up Terraform
+        if: inputs.terraform-cli-config == ''
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ inputs.terraform-version }}
           terraform_wrapper: false
+
+      - name: Require preinstalled Terraform version
+        if: inputs.terraform-cli-config != ''
+        env:
+          TERRAFORM_VERSION: ${{ inputs.terraform-version }}
+        run: test "$(terraform version -json | jq -r .terraform_version)" = "$TERRAFORM_VERSION"
 
       - name: Terraform init
         env:
