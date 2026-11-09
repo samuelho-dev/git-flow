@@ -499,6 +499,7 @@ Validate Terraform configuration with formatting checks and security scanning. R
 |-------|------|---------|-------------|
 | `terraform-path` | string | **required** | Path to Terraform directory |
 | `terraform-version` | string | `latest` | Terraform version |
+| `terraform-cli-config` | string | `''` | Preinstalled CLI config path (sets `TF_CLI_CONFIG_FILE`, e.g. an offline provider mirror); skips setup-terraform and requires the runner's `terraform` to equal `terraform-version` exactly |
 | `format-check` | boolean | `true` | Check Terraform formatting (`terraform fmt -check`) |
 | `security-scan` | boolean | `true` | Run security scanning |
 | `severity` | string | `HIGH,CRITICAL` | Minimum severity to flag |
@@ -542,6 +543,7 @@ Generate a Terraform plan and post a summary comment on the PR. Plans are stored
 |-------|------|---------|-------------|
 | `terraform-path` | string | **required** | Path to Terraform directory |
 | `terraform-version` | string | `latest` | Terraform version |
+| `terraform-cli-config` | string | `''` | Preinstalled CLI config path (sets `TF_CLI_CONFIG_FILE`, e.g. an offline provider mirror); skips setup-terraform and requires the runner's `terraform` to equal `terraform-version` exactly |
 | `var-file` | string | `''` | Path to tfvars file (relative to terraform-path) |
 | `aws-region` | string | `us-west-2` | AWS region |
 | `plan-artifact-name` | string | `tfplan` | Name for the uploaded plan artifact |
@@ -613,6 +615,7 @@ Download and verify the archived plan produced by `terraform-plan.yml` before ex
 | `plan-sha256` | string | **required** | Qualified plan archive digest from the plan job |
 | `plan-run-id` / `plan-run-attempt` | string | `''` | Both required when applying from another run (trusted default-branch workflow only) |
 | `terraform-version` | string | `latest` | Terraform version |
+| `terraform-cli-config` | string | `''` | Preinstalled CLI config path (sets `TF_CLI_CONFIG_FILE`, e.g. an offline provider mirror); skips setup-terraform and requires the runner's `terraform` to equal `terraform-version` exactly |
 | `aws-region` | string | `us-west-2` | AWS region |
 | `environment` | string | `''` | GitHub environment name for approval gate |
 
